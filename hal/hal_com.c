@@ -1022,12 +1022,51 @@ void rtw_hal_reqtxrpt(_adapter *padapter, u8 macid)
 		padapter->hal_func.reqtxrpt(padapter, macid);
 }
 
+void rtw_ccx_tx_rpt_handle(_adapter *adapter, u8 macid, u8 tx_state,
+			       u8 retry_cnt, bool is_bmc)
+{
+	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
+	struct macid_ctl_t *macid_ctl = dvobj_to_macidctl(dvobj);
+	struct sta_info *psta;
+	struct stainfo_stats *stats;
+
+	if (!macid_ctl || macid >= macid_ctl->num)
+		return;
+
+	psta = macid_ctl->sta[macid];
+	if (!psta || !(psta->state & WIFI_ASOC_STATE))
+		return;
+
+	if (is_bmc)
+		return;
+
+	if (psta->padapter->fix_rate == 0xff && !psta->cmn.ra_info.disable_ra)
+		return;
+
+	stats = &psta->sta_stats;
+
+	if (tx_state == 0)
+		stats->tx_ok_cnt++;
+	else {
+		stats->tx_fail_cnt++;
+		stats->tx_fail_cnt_sum++;
+	}
+
+	stats->tx_retry_cnt += retry_cnt;
+	stats->tx_retry_cnt_sum += retry_cnt;
+}
+
 int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 {
 	struct sta_priv	*pstapriv_primary = &(GET_PRIMARY_ADAPTER(adapter))->stapriv;
 	struct submit_ctx *gotc2h = NULL;
+	struct sta_info *psta = NULL;
 	u8 cmd_ret;
 	int ret = _SUCCESS;
+
+	psta = rtw_get_stainfo(&adapter->stapriv, macaddr);
+	if (psta && (psta->padapter->fix_rate != 0xff || psta->cmn.ra_info.disable_ra))
+		return ret;
 
 	gotc2h = (struct submit_ctx *)rtw_zmalloc(sizeof(struct submit_ctx));
 	if (!gotc2h)
@@ -1077,7 +1116,6 @@ exit:
 
 void rtw_refresh_forced_rate_tx_stats(_adapter *adapter)
 {
-	HAL_DATA_TYPE *hal_data = GET_HAL_DATA(adapter);
 	struct sta_priv *pstapriv = &adapter->stapriv;
 	u8 mac_list[NUM_STA][ETH_ALEN];
 	u32 hash_idx;
