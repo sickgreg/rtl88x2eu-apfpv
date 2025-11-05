@@ -1028,6 +1028,7 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 	struct submit_ctx *gotc2h = NULL;
 	u8 cmd_ret;
 	int ret = _SUCCESS;
+	int timeout_ms = 60;
 
 	gotc2h = (struct submit_ctx *)rtw_zmalloc(sizeof(struct submit_ctx));
 	if (!gotc2h)
@@ -1045,7 +1046,10 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 		goto exit;
 	}
 
-	rtw_sctx_init(gotc2h, 60);
+	if (adapter->fix_rate != 0xff)
+		timeout_ms = 500;
+
+	rtw_sctx_init(gotc2h, timeout_ms);
 	pstapriv_primary->gotc2h = gotc2h;
 	_rtw_memcpy(pstapriv_primary->c2h_sta_mac, macaddr, ETH_ALEN);
 	pstapriv_primary->c2h_adapter_id = adapter->iface_id;
@@ -1088,6 +1092,9 @@ void rtw_refresh_forced_rate_tx_stats(_adapter *adapter)
 	u8 i;
 
 	if (!adapter->hal_func.reqtxrpt)
+		return;
+
+	if (adapter->fix_rate == 0xff && hal_data->fw_ractrl == _TRUE)
 		return;
 
 	_enter_critical_bh(&pstapriv->sta_hash_lock, &irqL);
