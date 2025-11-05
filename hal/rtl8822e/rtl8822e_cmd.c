@@ -366,18 +366,49 @@ void rtl8822e_download_BTCoex_AP_mode_rsvd_page(PADAPTER adapter)
  */
 static void c2h_ccx_rpt(PADAPTER adapter, u8 *pdata)
 {
+	u8 tx_state = CCX_RPT_GET_TX_STATE(pdata);
 #ifdef CONFIG_XMIT_ACK
-	u8 tx_state;
-
-
-	tx_state = CCX_RPT_GET_TX_STATE(pdata);
-
 	/* 0 means success, 1 means retry drop */
 	if (tx_state == 0)
 		rtw_ack_tx_done(&adapter->xmitpriv, RTW_SCTX_DONE_SUCCESS);
 	else
 		rtw_ack_tx_done(&adapter->xmitpriv, RTW_SCTX_DONE_CCX_PKT_FAIL);
 #endif /* CONFIG_XMIT_ACK */
+
+	if (tx_state <= 3) {
+		/* Track retry statistics locally whenever a fixed-rate mask is active. */
+		struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
+		struct macid_ctl_t *macid_ctl = dvobj_to_macidctl(dvobj);
+		u8 macid = CCX_RPT_GET_MACID(pdata);
+		struct sta_info *psta = NULL;
+		struct stainfo_stats *stats;
+		u8 retry_cnt = CCX_RPT_GET_DATA_RETRY_COUNT(pdata);
+
+		if (!macid_ctl || macid >= macid_ctl->num)
+			return;
+
+		psta = macid_ctl->sta[macid];
+		if (!psta || !(psta->state & WIFI_ASOC_STATE))
+			return;
+
+		if (CCX_RPT_GET_BMC(pdata))
+			return;
+
+		if (psta->padapter->fix_rate == 0xff)
+			return;
+
+		stats = &psta->sta_stats;
+
+		if (tx_state == 0)
+			stats->tx_ok_cnt++;
+		else {
+			stats->tx_fail_cnt++;
+			stats->tx_fail_cnt_sum++;
+		}
+
+		stats->tx_retry_cnt += retry_cnt;
+		stats->tx_retry_cnt_sum += retry_cnt;
+	}
 }
 
 static void

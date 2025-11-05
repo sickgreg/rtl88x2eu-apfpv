@@ -1029,6 +1029,9 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 	u8 cmd_ret;
 	int ret = _SUCCESS;
 
+	if (adapter->fix_rate != 0xff)
+		return ret;
+
 	gotc2h = (struct submit_ctx *)rtw_zmalloc(sizeof(struct submit_ctx));
 	if (!gotc2h)
 		return _FAIL;
@@ -1077,7 +1080,6 @@ exit:
 
 void rtw_refresh_forced_rate_tx_stats(_adapter *adapter)
 {
-	HAL_DATA_TYPE *hal_data = GET_HAL_DATA(adapter);
 	struct sta_priv *pstapriv = &adapter->stapriv;
 	u8 mac_list[NUM_STA][ETH_ALEN];
 	u32 hash_idx;
