@@ -278,7 +278,13 @@ static s32 update_txdesc(struct xmit_frame *pxmitframe, u8 *pmem, s32 sz, u8 bag
 		}
 #endif /* CONFIG_XMIT_ACK */
 #endif
-	} else if ((pxmitframe->frame_tag & 0x0f) == MGNT_FRAMETAG) {
+
+		if (pxmitframe->attrib.psta &&
+		    !IS_MCAST(pxmitframe->attrib.ra) &&
+		    (padapter->fix_rate != 0xff ||
+		     pxmitframe->attrib.psta->cmn.ra_info.disable_ra))
+			SET_TX_DESC_SPE_RPT_8822E(ptxdesc, 1);
+		} else if ((pxmitframe->frame_tag & 0x0f) == MGNT_FRAMETAG) {
 		/* RTW_INFO("pxmitframe->frame_tag == MGNT_FRAMETAG\n");	*/
 		SET_TX_DESC_MBSSID_8822E(ptxdesc, pattrib->mbssid & 0xF);
 
