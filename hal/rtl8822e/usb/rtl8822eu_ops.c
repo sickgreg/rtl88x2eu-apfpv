@@ -221,14 +221,43 @@ static void rtl8822eu_init_default_value(PADAPTER	padapter)
 
 static u8 rtl8822eu_ps_func(PADAPTER padapter, HAL_INTF_PS_FUNC efunc_id, u8 *val)
 {
-	u8 bResult = _TRUE;
+        u8 bResult = _TRUE;
 
-	switch (efunc_id) {
+        switch (efunc_id) {
 
-	default:
-		break;
-	}
-	return bResult;
+        default:
+                break;
+        }
+        return bResult;
+}
+
+#ifdef CONFIG_USB_HCI
+static bool rtl8822eu_queue_is_data(u32 queue)
+{
+        return queue == VO_QUEUE_INX || queue == VI_QUEUE_INX ||
+               queue == BE_QUEUE_INX || queue == BK_QUEUE_INX;
+}
+#endif
+
+static void rtl8822eu_hci_flush(PADAPTER padapter, u32 queue)
+{
+        if (!padapter)
+                return;
+
+        if (queue >= HW_QUEUE_ENTRY)
+                return;
+
+        if ((queue == BCN_QUEUE_INX) || (queue == TXCMD_QUEUE_INX))
+                return;
+
+        rtw_tx_flush_queue(padapter, BIT(queue));
+
+#ifdef CONFIG_USB_HCI
+        if (rtl8822eu_queue_is_data(queue)) {
+                rtw_write_port_cancel(padapter);
+                RTW_ENABLE_FUNC(padapter, DF_TX_BIT);
+        }
+#endif
 }
 
 #ifdef CONFIG_RTW_LED
@@ -346,17 +375,18 @@ void rtl8822eu_set_hal_ops(PADAPTER padapter)
 #ifdef CONFIG_RTW_MGMT_QUEUE
 	ops->hal_mgmt_xmitframe_enqueue = rtl8822eu_hal_mgmt_xmitframe_enqueue;
 #endif
-	ops->hal_xmitframe_enqueue = rtl8822eu_hal_xmitframe_enqueue;
+        ops->hal_xmitframe_enqueue = rtl8822eu_hal_xmitframe_enqueue;
 
 #ifdef CONFIG_HOSTAPD_MLME
-	ops->hostap_mgnt_xmit_entry = rtl8822eu_hostap_mgnt_xmit_entry;
+        ops->hostap_mgnt_xmit_entry = rtl8822eu_hostap_mgnt_xmit_entry;
 #endif
-	ops->interface_ps_func = rtl8822eu_ps_func;
+        ops->interface_ps_func = rtl8822eu_ps_func;
+        ops->hci_flush = rtl8822eu_hci_flush;
 #ifdef CONFIG_XMIT_THREAD_MODE
-	ops->xmit_thread_handler = rtl8822eu_xmit_buf_handler;
+        ops->xmit_thread_handler = rtl8822eu_xmit_buf_handler;
 #endif
 #ifdef CONFIG_SUPPORT_USB_INT
-	ops->interrupt_handler = rtl8822eu_interrupt_handler;
+        ops->interrupt_handler = rtl8822eu_interrupt_handler;
 #endif
 
 
