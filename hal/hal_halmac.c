@@ -4261,10 +4261,11 @@ int rtw_halmac_c2h_handle(struct dvobj_priv *d, u8 *c2h, u32 size)
 		_adapter *adapter = dvobj_get_primary_adapter(d);
 		u8 tx_state = CCX_RPT_GET_TX_STATE(c2h_data);
 
-		if (tx_state <= 3)
-			rtw_ccx_tx_rpt_handle(adapter, CCX_RPT_GET_MACID(c2h_data), tx_state,
-					      CCX_RPT_GET_DATA_RETRY_COUNT(c2h_data),
-					      CCX_RPT_GET_BMC(c2h_data));
+               if (tx_state <= 3)
+                       rtw_ccx_tx_rpt_handle(adapter, CCX_RPT_GET_MACID(c2h_data), tx_state,
+                                             CCX_RPT_GET_DATA_RETRY_COUNT(c2h_data),
+                                             CCX_RPT_GET_RTS_RETRY_COUNT(c2h_data),
+                                             CCX_RPT_GET_BMC(c2h_data));
 
 		return 0;
 	}

@@ -1065,12 +1065,13 @@ bool rtw_sta_force_ccx_stats(struct sta_info *psta)
 }
 
 void rtw_ccx_tx_rpt_handle(_adapter *adapter, u8 macid, u8 tx_state,
-                           u8 retry_cnt, bool is_bmc)
+                           u8 retry_cnt, u8 rts_retry_cnt, bool is_bmc)
 {
 	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
 	struct macid_ctl_t *macid_ctl = dvobj_to_macidctl(dvobj);
 	struct sta_info *psta;
 	struct stainfo_stats *stats;
+	u16 total_retry_cnt;
 
 	if (!macid_ctl || macid >= macid_ctl->num)
 		return;
@@ -1094,8 +1095,10 @@ void rtw_ccx_tx_rpt_handle(_adapter *adapter, u8 macid, u8 tx_state,
                stats->tx_fail_cnt_sum++;
        }
 
-       stats->tx_retry_cnt_sum += retry_cnt;
-       stats->tx_retry_cnt = stats->tx_retry_cnt_sum;
+	total_retry_cnt = retry_cnt + rts_retry_cnt;
+
+	stats->tx_retry_cnt_sum += total_retry_cnt;
+	stats->tx_retry_cnt = stats->tx_retry_cnt_sum;
 }
 
 int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)

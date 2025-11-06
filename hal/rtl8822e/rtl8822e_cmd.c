@@ -375,10 +375,11 @@ static void c2h_ccx_rpt(PADAPTER adapter, u8 *pdata)
 		rtw_ack_tx_done(&adapter->xmitpriv, RTW_SCTX_DONE_CCX_PKT_FAIL);
 #endif /* CONFIG_XMIT_ACK */
 
-	if (tx_state <= 3)
-		rtw_ccx_tx_rpt_handle(adapter, CCX_RPT_GET_MACID(pdata), tx_state,
-				      CCX_RPT_GET_DATA_RETRY_COUNT(pdata),
-				      CCX_RPT_GET_BMC(pdata));
+       if (tx_state <= 3)
+               rtw_ccx_tx_rpt_handle(adapter, CCX_RPT_GET_MACID(pdata), tx_state,
+                                     CCX_RPT_GET_DATA_RETRY_COUNT(pdata),
+                                     CCX_RPT_GET_RTS_RETRY_COUNT(pdata),
+                                     CCX_RPT_GET_BMC(pdata));
 }
 
 static void
