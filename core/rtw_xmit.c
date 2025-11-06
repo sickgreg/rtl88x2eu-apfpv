@@ -6891,28 +6891,271 @@ int rtw_ack_tx_wait(struct xmit_priv *pxmitpriv, u32 timeout_ms)
 
 void rtw_ack_tx_done(struct xmit_priv *pxmitpriv, int status)
 {
-	struct submit_ctx *pack_tx_ops = &pxmitpriv->ack_tx_ops;
+        struct submit_ctx *pack_tx_ops = &pxmitpriv->ack_tx_ops;
 
-	if (pxmitpriv->ack_tx)
-		rtw_sctx_done_err(&pack_tx_ops, status);
-	else
-		RTW_INFO("%s ack_tx not set\n", __func__);
+        if (pxmitpriv->ack_tx)
+                rtw_sctx_done_err(&pack_tx_ops, status);
+        else
+                RTW_INFO("%s ack_tx not set\n", __func__);
 }
 #endif /* CONFIG_XMIT_ACK */
 
+#ifdef CONFIG_AP_MODE
+static void rtw_refresh_ap_keep_alive(_adapter *padapter, u32 queue_mask)
+{
+        struct sta_priv *pstapriv;
+        _irqL irqL;
+        _list *phead, *plist;
+
+        if (!padapter)
+                return;
+
+        if (!MLME_IS_AP(padapter))
+                return;
+
+        if (!(queue_mask & (BIT(VO_QUEUE_INX) | BIT(VI_QUEUE_INX) |
+                             BIT(BE_QUEUE_INX) | BIT(BK_QUEUE_INX))))
+                return;
+
+        pstapriv = &padapter->stapriv;
+
+        _enter_critical_bh(&pstapriv->asoc_list_lock, &irqL);
+        phead = &pstapriv->asoc_list;
+        plist = get_next(phead);
+
+        while (rtw_end_of_queue_search(phead, plist) == _FALSE) {
+                struct sta_info *psta = LIST_CONTAINOR(plist,
+                                struct sta_info, asoc_list);
+
+                plist = get_next(plist);
+
+                psta->expire_to = pstapriv->expire_to;
+                psta->keep_alive_trycnt = 0;
+#if !defined(CONFIG_ACTIVE_KEEP_ALIVE_CHECK) && defined(CONFIG_80211N_HT)
+                psta->under_exist_checking = 0;
+#endif
+                psta->state &= ~WIFI_STA_ALIVE_CHK_STATE;
+        }
+
+        _exit_critical_bh(&pstapriv->asoc_list_lock, &irqL);
+}
+#else
+static inline void rtw_refresh_ap_keep_alive(_adapter *padapter, u32 queue_mask)
+{
+        (void)padapter;
+        (void)queue_mask;
+}
+#endif
+
+static void rtw_flush_hwxmit_queue(struct xmit_priv *pxmitpriv,
+                                  struct hw_xmit *phwxmit,
+                                  bool is_mgmt)
+{
+        _queue *sta_queue;
+        _list *phead, *plist;
+        _irqL irqL;
+        void (*free_fn)(struct xmit_priv *, _queue *) = rtw_free_xmitframe_queue;
+
+        if (!pxmitpriv || !phwxmit)
+                return;
+
+        sta_queue = phwxmit->sta_queue;
+        if (!sta_queue)
+                return;
+
+#ifdef CONFIG_RTW_MGMT_QUEUE
+        if (is_mgmt)
+                free_fn = rtw_free_mgmt_xmitframe_queue;
+#else
+        is_mgmt = false;
+#endif
+
+        _enter_critical_bh(&sta_queue->lock, &irqL);
+        phead = get_list_head(sta_queue);
+        plist = get_next(phead);
+
+        while (rtw_end_of_queue_search(phead, plist) == _FALSE) {
+                struct tx_servq *ptxservq = LIST_CONTAINOR(plist,
+                                        struct tx_servq,
+                                        tx_pending);
+
+                plist = get_next(plist);
+
+                free_fn(pxmitpriv, &ptxservq->sta_pending);
+                ptxservq->qcnt = 0;
+                rtw_list_delete(&ptxservq->tx_pending);
+                _rtw_init_listhead(&ptxservq->tx_pending);
+        }
+
+        _exit_critical_bh(&sta_queue->lock, &irqL);
+
+        phwxmit->accnt = 0;
+}
+
+static bool rtw_xmitbuf_match_hw_queue(struct xmit_buf *pxmitbuf, u32 hw_queue)
+{
+        if (!pxmitbuf)
+                return _FALSE;
+
+        switch (hw_queue) {
+        case VO_QUEUE_INX:
+        case VI_QUEUE_INX:
+        case BE_QUEUE_INX:
+        case BK_QUEUE_INX:
+                return pxmitbuf->flags == hw_queue;
+#ifdef CONFIG_RTW_MGMT_QUEUE
+        case MGT_QUEUE_INX:
+        case HIGH_QUEUE_INX:
+                if (pxmitbuf->buf_tag == XMITBUF_MGNT)
+                        return _TRUE;
+                return pxmitbuf->flags == hw_queue;
+#endif
+        default:
+                break;
+        }
+
+        return _TRUE;
+}
+
+static void rtw_flush_pending_xmitbuf_queue(struct xmit_priv *pxmitpriv,
+                                           bool flush_all, u32 hw_queue)
+{
+        _queue *pqueue;
+        _irqL irqL;
+        _list drop_head;
+        _list *phead, *plist;
+
+        if (!pxmitpriv)
+                return;
+
+        pqueue = &pxmitpriv->pending_xmitbuf_queue;
+        _rtw_init_listhead(&drop_head);
+
+        _enter_critical_bh(&pqueue->lock, &irqL);
+        phead = get_list_head(pqueue);
+        plist = get_next(phead);
+
+        while (rtw_end_of_queue_search(phead, plist) == _FALSE) {
+                struct xmit_buf *pxmitbuf = LIST_CONTAINOR(plist, struct xmit_buf, list);
+
+                plist = get_next(plist);
+
+                if (!flush_all && !rtw_xmitbuf_match_hw_queue(pxmitbuf, hw_queue))
+                        continue;
+
+                rtw_list_delete(&pxmitbuf->list);
+                rtw_list_insert_tail(&pxmitbuf->list, &drop_head);
+        }
+        _exit_critical_bh(&pqueue->lock, &irqL);
+
+        while (rtw_is_list_empty(&drop_head) == _FALSE) {
+                _list *plist_drop = get_next(&drop_head);
+                struct xmit_buf *pxmitbuf = LIST_CONTAINOR(plist_drop, struct xmit_buf, list);
+
+                rtw_list_delete(&pxmitbuf->list);
+                rtw_free_xmitbuf(pxmitpriv, pxmitbuf);
+        }
+}
+
+static struct hw_xmit *rtw_get_hwxmit_by_hw_queue(struct xmit_priv *pxmitpriv,
+                                        u32 hw_queue, bool *is_mgmt)
+{
+        if (!pxmitpriv || !pxmitpriv->hwxmits)
+                return NULL;
+
+        if (is_mgmt)
+                *is_mgmt = _FALSE;
+
+        switch (hw_queue) {
+        case VO_QUEUE_INX:
+                return (pxmitpriv->hwxmit_entry > 0) ? &pxmitpriv->hwxmits[0] : NULL;
+        case VI_QUEUE_INX:
+                return (pxmitpriv->hwxmit_entry > 1) ? &pxmitpriv->hwxmits[1] : NULL;
+        case BE_QUEUE_INX:
+                return (pxmitpriv->hwxmit_entry > 2) ? &pxmitpriv->hwxmits[2] : NULL;
+        case BK_QUEUE_INX:
+                return (pxmitpriv->hwxmit_entry > 3) ? &pxmitpriv->hwxmits[3] : NULL;
+#ifdef CONFIG_RTW_MGMT_QUEUE
+        case MGT_QUEUE_INX:
+        case HIGH_QUEUE_INX:
+                if (pxmitpriv->hwxmit_entry > 4) {
+                        if (is_mgmt)
+                                *is_mgmt = _TRUE;
+                        return &pxmitpriv->hwxmits[pxmitpriv->hwxmit_entry - 1];
+                }
+                break;
+#endif
+        default:
+                break;
+        }
+
+        return NULL;
+}
+
+void rtw_tx_flush_queue(_adapter *padapter, u32 queue_mask)
+{
+        struct xmit_priv *pxmitpriv;
+        u32 q;
+        bool flush_all;
+
+        if (!padapter)
+                return;
+
+        pxmitpriv = &padapter->xmitpriv;
+        flush_all = (queue_mask == 0);
+
+        for (q = 0; q < HW_QUEUE_ENTRY; q++) {
+                struct hw_xmit *phwxmit;
+                bool is_mgmt = _FALSE;
+
+                if ((q == BCN_QUEUE_INX) || (q == TXCMD_QUEUE_INX))
+                        continue;
+
+                if (!flush_all && !(queue_mask & BIT(q)))
+                        continue;
+
+                phwxmit = rtw_get_hwxmit_by_hw_queue(pxmitpriv, q, &is_mgmt);
+                if (!phwxmit)
+                        continue;
+
+                rtw_flush_hwxmit_queue(pxmitpriv, phwxmit, is_mgmt);
+                rtw_flush_pending_xmitbuf_queue(pxmitpriv, flush_all, q);
+        }
+
+#ifdef CONFIG_USB_HCI
+        if (flush_all || queue_mask & (BIT(VO_QUEUE_INX) | BIT(VI_QUEUE_INX) |
+                BIT(BE_QUEUE_INX) | BIT(BK_QUEUE_INX))) {
+                pxmitpriv->beq_cnt = 0;
+                pxmitpriv->bkq_cnt = 0;
+                pxmitpriv->viq_cnt = 0;
+                pxmitpriv->voq_cnt = 0;
+        }
+#endif
+#ifdef CONFIG_AP_MODE
+        if (flush_all)
+                rtw_refresh_ap_keep_alive(padapter, BIT(VO_QUEUE_INX) |
+                        BIT(VI_QUEUE_INX) |
+                        BIT(BE_QUEUE_INX) |
+                        BIT(BK_QUEUE_INX));
+        else if (queue_mask & (BIT(VO_QUEUE_INX) | BIT(VI_QUEUE_INX) |
+                         BIT(BE_QUEUE_INX) | BIT(BK_QUEUE_INX)))
+                rtw_refresh_ap_keep_alive(padapter, queue_mask);
+#endif
+}
+
 void rtw_hci_flush(_adapter *padapter)
 {
-	u8 q;
+        u8 q;
 
-	if (padapter->hal_func.hci_flush) {
-		for (q = 0; q < HW_QUEUE_ENTRY; q++) {
-			if ((q == BCN_QUEUE_INX) || (q == TXCMD_QUEUE_INX))
-				continue;
+        if (padapter->hal_func.hci_flush) {
+                for (q = 0; q < HW_QUEUE_ENTRY; q++) {
+                        if ((q == BCN_QUEUE_INX) || (q == TXCMD_QUEUE_INX))
+                                continue;
 
-			padapter->hal_func.hci_flush(padapter, q);
-		}
-	}
-	else
-		RTW_WARN("hal ops: hci_flush is NULL\n");
+                        padapter->hal_func.hci_flush(padapter, q);
+                }
+        }
+        else
+                RTW_WARN("hal ops: hci_flush is NULL\n");
 }
 

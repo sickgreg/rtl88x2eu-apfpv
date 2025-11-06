@@ -19,6 +19,7 @@
 #include "../../hal_halmac.h"		/* halmac api */
 #include "../rtl8822e.h"		/* rtl8822e_update_txdesc() */
 #include "rtl8822eu.h"			/* OFFSET_SZ MAX_TX_AGG_PACKET_NUMBER_8822E */
+#include <hal_com.h>
 
 static void update_txdesc_h2c_pkt(struct xmit_frame *pxmitframe, u8 *pmem, s32 sz)
 {
@@ -278,6 +279,11 @@ static s32 update_txdesc(struct xmit_frame *pxmitframe, u8 *pmem, s32 sz, u8 bag
 		}
 #endif /* CONFIG_XMIT_ACK */
 #endif
+
+			if (pxmitframe->attrib.psta &&
+			    !IS_MCAST(pxmitframe->attrib.ra) &&
+			    rtw_sta_force_ccx_stats(pxmitframe->attrib.psta))
+				SET_TX_DESC_SPE_RPT_8822E(ptxdesc, 1);
 	} else if ((pxmitframe->frame_tag & 0x0f) == MGNT_FRAMETAG) {
 		/* RTW_INFO("pxmitframe->frame_tag == MGNT_FRAMETAG\n");	*/
 		SET_TX_DESC_MBSSID_8822E(ptxdesc, pattrib->mbssid & 0xF);

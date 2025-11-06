@@ -1022,12 +1022,96 @@ void rtw_hal_reqtxrpt(_adapter *padapter, u8 macid)
 		padapter->hal_func.reqtxrpt(padapter, macid);
 }
 
+static u8 rtw_popcount64(u64 mask)
+{
+	u8 cnt = 0;
+
+	while (mask) {
+		mask &= (mask - 1);
+		cnt++;
+	}
+
+	return cnt;
+}
+
+bool rtw_sta_force_ccx_stats(struct sta_info *psta)
+{
+	u64 mask;
+	u8 bit_cnt;
+
+	if (!psta)
+		return false;
+
+	if (psta->padapter->fix_rate != 0xff)
+		return true;
+
+	if (psta->cmn.ra_info.disable_ra)
+		return true;
+
+	mask = psta->cmn.ra_info.ramask;
+
+	if (!mask)
+		return false;
+
+	bit_cnt = rtw_popcount64(mask);
+	if (bit_cnt == 1)
+		return true;
+
+	mask &= ~0xfULL;
+	if (!mask)
+		return false;
+
+	return rtw_popcount64(mask) == 1;
+}
+
+void rtw_ccx_tx_rpt_handle(_adapter *adapter, u8 macid, u8 tx_state,
+			u8 retry_cnt, u8 rts_retry_cnt, bool is_bmc)
+{
+	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
+	struct macid_ctl_t *macid_ctl = dvobj_to_macidctl(dvobj);
+	struct sta_info *psta;
+	struct stainfo_stats *stats;
+	u16 total_retry_cnt;
+
+	if (!macid_ctl || macid >= macid_ctl->num)
+		return;
+
+	psta = macid_ctl->sta[macid];
+	if (!psta || !(psta->state & WIFI_ASOC_STATE))
+		return;
+
+	if (is_bmc)
+		return;
+
+	if (!rtw_sta_force_ccx_stats(psta))
+		return;
+
+	stats = &psta->sta_stats;
+
+	if (tx_state == 0)
+		stats->tx_ok_cnt++;
+	else {
+		stats->tx_fail_cnt++;
+		stats->tx_fail_cnt_sum++;
+	}
+
+	total_retry_cnt = retry_cnt + rts_retry_cnt;
+
+	stats->tx_retry_cnt_sum += total_retry_cnt;
+	stats->tx_retry_cnt += total_retry_cnt;
+}
+
 int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 {
 	struct sta_priv	*pstapriv_primary = &(GET_PRIMARY_ADAPTER(adapter))->stapriv;
 	struct submit_ctx *gotc2h = NULL;
+	struct sta_info *psta = NULL;
 	u8 cmd_ret;
 	int ret = _SUCCESS;
+
+	psta = rtw_get_stainfo(&adapter->stapriv, macaddr);
+	if (psta && rtw_sta_force_ccx_stats(psta))
+		return ret;
 
 	gotc2h = (struct submit_ctx *)rtw_zmalloc(sizeof(struct submit_ctx));
 	if (!gotc2h)
@@ -1074,6 +1158,55 @@ exit:
 		rtw_mfree(gotc2h, sizeof(struct submit_ctx));
 	return ret;
 }
+
+
+void rtw_refresh_forced_rate_tx_stats(_adapter *adapter)
+{
+	struct sta_priv *pstapriv = &adapter->stapriv;
+	u8 mac_list[NUM_STA][ETH_ALEN];
+	u32 hash_idx;
+	u8 sta_cnt = 0;
+	_irqL irqL;
+	_list *phead, *plist;
+	struct sta_info *psta;
+	u8 i;
+
+	if (!adapter->hal_func.reqtxrpt)
+		return;
+
+	_enter_critical_bh(&pstapriv->sta_hash_lock, &irqL);
+	for (hash_idx = 0; hash_idx < NUM_STA && sta_cnt < NUM_STA; hash_idx++) {
+		phead = &(pstapriv->sta_hash[hash_idx]);
+		plist = get_next(phead);
+
+		while ((rtw_end_of_queue_search(phead, plist) == _FALSE) &&
+		       sta_cnt < NUM_STA) {
+			psta = LIST_CONTAINOR(plist, struct sta_info, hash_list);
+			plist = get_next(plist);
+
+			if (!(psta->state & WIFI_ASOC_STATE))
+				continue;
+
+			_rtw_memcpy(mac_list[sta_cnt], psta->cmn.mac_addr, ETH_ALEN);
+			sta_cnt++;
+		}
+	}
+	_exit_critical_bh(&pstapriv->sta_hash_lock, &irqL);
+
+	for (i = 0; i < sta_cnt; i++) {
+		psta = rtw_get_stainfo(pstapriv, mac_list[i]);
+		if (!psta)
+			continue;
+
+		if (!(psta->state & WIFI_ASOC_STATE))
+			continue;
+
+		if (rtw_get_sta_tx_stat(adapter, psta->cmn.mac_id,
+				psta->cmn.mac_addr) == RTW_BUSY)
+			break;
+	}
+}
+
 
 void rtw_hal_dump_macaddr(void *sel, _adapter *adapter)
 {
