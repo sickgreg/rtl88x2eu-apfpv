@@ -1098,7 +1098,7 @@ void rtw_ccx_tx_rpt_handle(_adapter *adapter, u8 macid, u8 tx_state,
 	total_retry_cnt = retry_cnt + rts_retry_cnt;
 
 	stats->tx_retry_cnt_sum += total_retry_cnt;
-	stats->tx_retry_cnt = stats->tx_retry_cnt_sum;
+	stats->tx_retry_cnt += total_retry_cnt;
 }
 
 int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
