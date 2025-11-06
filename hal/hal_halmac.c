@@ -17,6 +17,7 @@
 #include <drv_types.h>		/* PADAPTER, struct dvobj_priv, SDIO_ERR_VAL8 and etc. */
 #include <hal_data.h>		/* efuse, PHAL_DATA_TYPE and etc. */
 #include "hal_halmac.h"		/* dvobj_to_halmac() and ect. */
+#include "hal_com.h"
 
 /*
  * HALMAC take return value 0 for fail and 1 for success to replace
@@ -4255,6 +4256,18 @@ int rtw_halmac_c2h_handle(struct dvobj_priv *d, u8 *c2h, u32 size)
 	c2h_data = c2h + desc_size;
 	sub = C2H_HDR_GET_C2H_SUB_CMD_ID(c2h_data);
 	switch (sub) {
+	case C2H_SUB_CMD_ID_CCX_RPT:
+	{
+		_adapter *adapter = dvobj_get_primary_adapter(d);
+		u8 tx_state = CCX_RPT_GET_TX_STATE(c2h_data);
+
+		if (tx_state <= 3)
+			rtw_ccx_tx_rpt_handle(adapter, CCX_RPT_GET_MACID(c2h_data), tx_state,
+					      CCX_RPT_GET_DATA_RETRY_COUNT(c2h_data),
+					      CCX_RPT_GET_BMC(c2h_data));
+
+		return 0;
+	}
 	case C2H_SUB_CMD_ID_C2H_PKT_FTM_DBG:
 	case C2H_SUB_CMD_ID_C2H_PKT_FTM_2_DBG:
 	case C2H_SUB_CMD_ID_C2H_PKT_FTM_3_DBG:
@@ -4263,7 +4276,6 @@ int rtw_halmac_c2h_handle(struct dvobj_priv *d, u8 *c2h, u32 size)
 	case C2H_SUB_CMD_ID_FTMC2H_RPT:
 	case C2H_SUB_CMD_ID_DRVFTMC2H_RPT:
 	case C2H_SUB_CMD_ID_C2H_PKT_FTM_5_DBG:
-	case C2H_SUB_CMD_ID_CCX_RPT:
 	case C2H_SUB_CMD_ID_C2H_PKT_NAN_RPT:
 	case C2H_SUB_CMD_ID_C2H_PKT_ATM_RPT:
 	case C2H_SUB_CMD_ID_C2H_PKT_SCC_CSA_RPT:

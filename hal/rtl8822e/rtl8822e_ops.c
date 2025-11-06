@@ -3805,6 +3805,11 @@ static void fill_default_txdesc(struct xmit_frame *pxmitframe, u8 *pbuf)
 		SET_TX_DESC_DMA_TXAGG_NUM_8822E(pbuf, pxmitframe->agg_num);
 #endif
 
+		if (pxmitframe->attrib.psta &&
+		    !IS_MCAST(pxmitframe->attrib.ra) &&
+		    rtw_sta_force_ccx_stats(pxmitframe->attrib.psta))
+			SET_TX_DESC_SPE_RPT_8822E(pbuf, 1);
+
 #ifdef CONFIG_TDLS
 #ifdef CONFIG_XMIT_ACK
 		/* CCX-TXRPT ack for xmit mgmt frames. */
