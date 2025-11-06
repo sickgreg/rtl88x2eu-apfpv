@@ -160,21 +160,19 @@ static ssize_t proc_set_flush_tx(struct file *file, const char __user *buffer,
 {
 	struct net_device *dev = data;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
-	char tmp[64];
+	char tmp[32];
 	size_t len;
 	char *cur, *token;
 	u32 mask = 0;
-	bool explicit_mask = false;
-       bool force_cancel = false;
-       bool skip_cancel = false;
-	u8 txpause_save = 0;
+	bool selective = false;
+	u8 txpause_save;
 	u8 txpause_req = 0;
 	bool tx_paused = false;
 
 	if (!adapter)
 		return -ENODEV;
 
-	if (count == 0)
+	if (!count)
 		return -EINVAL;
 
 	len = min(count, sizeof(tmp) - 1);
@@ -184,85 +182,49 @@ static ssize_t proc_set_flush_tx(struct file *file, const char __user *buffer,
 
 	cur = tmp;
 	while ((token = strsep(&cur, " \t,\n")) != NULL) {
-		u32 val;
-
 		if (!*token)
 			continue;
 
 		if (!strncasecmp(token, "all", 3)) {
 			mask = 0;
-			explicit_mask = false;
+			selective = false;
 			break;
 		} else if (!strncasecmp(token, "vo", 2)) {
 			mask |= BIT(VO_QUEUE_INX);
-			explicit_mask = true;
+			selective = true;
 		} else if (!strncasecmp(token, "vi", 2)) {
 			mask |= BIT(VI_QUEUE_INX);
-			explicit_mask = true;
-		} else if (!strncasecmp(token, "be", 2)) {
-			mask |= BIT(BE_QUEUE_INX);
-			explicit_mask = true;
-		} else if (!strncasecmp(token, "bk", 2)) {
-			mask |= BIT(BK_QUEUE_INX);
-			explicit_mask = true;
-		} else if (!strncasecmp(token, "mgmt", 4)) {
-			mask |= BIT(MGT_QUEUE_INX) | BIT(HIGH_QUEUE_INX);
-			explicit_mask = true;
-		} else if (!strncasecmp(token, "hiq", 3) ||
-			   !strncasecmp(token, "hi", 2)) {
-			mask |= BIT(HIGH_QUEUE_INX);
-			explicit_mask = true;
-		} else if (!strncasecmp(token, "pub", 3)) {
-			mask |= BIT(HIGH_QUEUE_INX);
-			explicit_mask = true;
-               } else if (!strncasecmp(token, "cancel", 6)) {
-                       force_cancel = true;
-               } else if (!strncasecmp(token, "nocancel", 8)) {
-                       skip_cancel = true;
-                } else if (!kstrtou32(token, 0, &val)) {
-                        if (val < HW_QUEUE_ENTRY) {
-                                mask |= BIT(val);
-                                explicit_mask = true;
-                        }
+			selective = true;
 		}
 	}
 
 	txpause_save = rtw_read8(adapter, REG_TXPAUSE);
-	if (!explicit_mask) {
+	if (!selective) {
 		txpause_req = StopAll | StopBcnHiMgt;
 	} else {
 		if (mask & BIT(VO_QUEUE_INX))
 			txpause_req |= StopVO;
 		if (mask & BIT(VI_QUEUE_INX))
 			txpause_req |= StopVI;
-		if (mask & BIT(BE_QUEUE_INX))
-			txpause_req |= StopBE;
-		if (mask & BIT(BK_QUEUE_INX))
-			txpause_req |= StopBK;
-		if (mask & BIT(MGT_QUEUE_INX))
-			txpause_req |= StopMgt;
-		if (mask & BIT(HIGH_QUEUE_INX))
-			txpause_req |= StopHigh;
 	}
 	if (txpause_req && (txpause_save & txpause_req) != txpause_req) {
 		rtw_write8(adapter, REG_TXPAUSE, txpause_save | txpause_req);
 		tx_paused = true;
 	}
 
-	rtw_tx_flush_queue(adapter, explicit_mask ? mask : 0);
+	rtw_tx_flush_queue(adapter, selective ? mask : 0);
 
-       if (!skip_cancel && (!explicit_mask || force_cancel ||
-           (mask & (BIT(VO_QUEUE_INX) | BIT(VI_QUEUE_INX) |
-                    BIT(BE_QUEUE_INX) | BIT(BK_QUEUE_INX) |
-                    BIT(MGT_QUEUE_INX))))) {
-                rtw_write_port_cancel(adapter);
-                rtw_msleep_os(5);
-                RTW_ENABLE_FUNC(adapter, DF_TX_BIT);
-        } else
-                rtw_msleep_os(2);
+	if (!selective) {
+		rtw_write_port_cancel(adapter);
+		rtw_msleep_os(5);
+		RTW_ENABLE_FUNC(adapter, DF_TX_BIT);
+	} else {
+		rtw_msleep_os(2);
+	}
 
 	if (tx_paused)
 		rtw_write8(adapter, REG_TXPAUSE, txpause_save);
+
 	return count;
 }
 

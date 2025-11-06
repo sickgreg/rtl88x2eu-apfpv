@@ -1159,53 +1159,6 @@ exit:
 	return ret;
 }
 
-void rtw_refresh_forced_rate_tx_stats(_adapter *adapter)
-{
-	struct sta_priv *pstapriv = &adapter->stapriv;
-	u8 mac_list[NUM_STA][ETH_ALEN];
-	u32 hash_idx;
-	u8 sta_cnt = 0;
-	_irqL irqL;
-	_list *phead, *plist;
-	struct sta_info *psta;
-	u8 i;
-
-	if (!adapter->hal_func.reqtxrpt)
-		return;
-
-	_enter_critical_bh(&pstapriv->sta_hash_lock, &irqL);
-	for (hash_idx = 0; hash_idx < NUM_STA && sta_cnt < NUM_STA; hash_idx++) {
-		phead = &(pstapriv->sta_hash[hash_idx]);
-		plist = get_next(phead);
-
-		while ((rtw_end_of_queue_search(phead, plist) == _FALSE) &&
-		       sta_cnt < NUM_STA) {
-			psta = LIST_CONTAINOR(plist, struct sta_info, hash_list);
-			plist = get_next(plist);
-
-			if (!(psta->state & WIFI_ASOC_STATE))
-				continue;
-
-			_rtw_memcpy(mac_list[sta_cnt], psta->cmn.mac_addr, ETH_ALEN);
-			sta_cnt++;
-		}
-	}
-	_exit_critical_bh(&pstapriv->sta_hash_lock, &irqL);
-
-	for (i = 0; i < sta_cnt; i++) {
-		psta = rtw_get_stainfo(pstapriv, mac_list[i]);
-		if (!psta)
-			continue;
-
-		if (!(psta->state & WIFI_ASOC_STATE))
-			continue;
-
-		if (rtw_get_sta_tx_stat(adapter, psta->cmn.mac_id,
-			          psta->cmn.mac_addr) == RTW_BUSY)
-			break;
-	}
-}
-
 void rtw_hal_dump_macaddr(void *sel, _adapter *adapter)
 {
 	int i;

@@ -1280,9 +1280,11 @@ int proc_get_tx_stat(struct seq_file *m, void *v)
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 	struct sta_info *psta = NULL;
+	u8 sta_mac[NUM_STA][ETH_ALEN] = {{0}};
+	uint mac_id[NUM_STA];
 	struct stainfo_stats	*pstats = NULL;
 	struct sta_priv	*pstapriv = &(adapter->stapriv);
-	u32 i;
+	u32 i, macid_rec_idx = 0;
 	u8 bc_addr[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	u8 null_addr[ETH_ALEN] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
@@ -1290,8 +1292,6 @@ int proc_get_tx_stat(struct seq_file *m, void *v)
 		RTW_PRINT_SEL(m, "Not support.\n");
 		return 0;
 	}
-
-	rtw_refresh_forced_rate_tx_stats(adapter);
 
 	_enter_critical_bh(&pstapriv->sta_hash_lock, &irqL);
 	for (i = 0; i < NUM_STA; i++) {
@@ -1303,6 +1303,17 @@ int proc_get_tx_stat(struct seq_file *m, void *v)
 			if ((_rtw_memcmp(psta->cmn.mac_addr, bc_addr, ETH_ALEN) !=  _TRUE)
 				&& (_rtw_memcmp(psta->cmn.mac_addr, null_addr, ETH_ALEN) != _TRUE)
 				&& (_rtw_memcmp(psta->cmn.mac_addr, adapter_mac_addr(adapter), ETH_ALEN) != _TRUE)) {
+				_rtw_memcpy(&sta_mac[macid_rec_idx][0], psta->cmn.mac_addr, ETH_ALEN);
+				mac_id[macid_rec_idx] = psta->cmn.mac_id;
+				macid_rec_idx++;
+			}
+		}
+	}
+	_exit_critical_bh(&pstapriv->sta_hash_lock, &irqL);
+	for (i = 0; i < macid_rec_idx; i++) {
+		if (rtw_get_sta_tx_stat(adapter, mac_id[i], &sta_mac[i][0]) == _SUCCESS) {
+			psta = rtw_get_stainfo(pstapriv, &sta_mac[i][0]);
+			if(psta) {
 				pstats = &psta->sta_stats;
 #if (!defined(ROKU_PRIVATE) && !defined(CONFIG_RTW_MULTI_AP))
 				RTW_PRINT_SEL(m, "data_sent_cnt :\t%u\n", pstats->tx_ok_cnt + pstats->tx_fail_cnt);
@@ -1311,13 +1322,16 @@ int proc_get_tx_stat(struct seq_file *m, void *v)
 				RTW_PRINT_SEL(m, "retry_cnt :\t%u\n\n", pstats->tx_retry_cnt);
 #else
 				RTW_PRINT_SEL(m, "MAC: " MAC_FMT " sent: %u fail: %u retry: %u\n",
-					MAC_ARG(psta->cmn.mac_addr),
-					pstats->tx_ok_cnt, pstats->tx_fail_cnt, pstats->tx_retry_cnt);
+				MAC_ARG(&sta_mac[i][0]), pstats->tx_ok_cnt, pstats->tx_fail_cnt, pstats->tx_retry_cnt);
 #endif /* ROKU_PRIVATE */
-			}
+
+			} else
+				RTW_PRINT_SEL(m, "STA is gone\n");
+		} else {
+			//to avoid c2h modify counters
+			break;
 		}
 	}
-	_exit_critical_bh(&pstapriv->sta_hash_lock, &irqL);
 	return 0;
 }
 
@@ -2937,8 +2951,8 @@ ssize_t proc_set_rate_ctl(struct file *file, const char __user *buffer, size_t c
 			if (adapter->fix_bw != 0xFF && fix_rate_ori != fix_rate)
 				rtw_run_in_thread_cmd(adapter, ((void *)(rtw_update_tx_rate_bmp)), adapter_to_dvobj(adapter));
 		}
-               if (num >= 2)
-                       adapter->data_fb = data_fb ? 1 : 0;
+		if (num >= 2)
+			adapter->data_fb = data_fb ? 1 : 0;
 #endif
 	}
 

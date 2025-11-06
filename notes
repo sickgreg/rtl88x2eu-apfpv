@@ -6,3 +6,6 @@ export KERNEL_DIR=/home/greg/builder/openipc/output/build/linux-custom
 
 
 then run /scripts build script
+
+# Current PR base branch
+export PR_BASE_BRANCH=retry-flush-refresh
