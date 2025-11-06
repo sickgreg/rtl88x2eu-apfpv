@@ -458,6 +458,10 @@ u8 SetHwReg(PADAPTER padapter, u8 variable, u8 *val);
 void GetHwReg(PADAPTER padapter, u8 variable, u8 *val);
 void rtw_hal_check_rxfifo_full(_adapter *adapter);
 void rtw_hal_reqtxrpt(_adapter *padapter, u8 macid);
+void rtw_refresh_forced_rate_tx_stats(_adapter *adapter);
+void rtw_ccx_tx_rpt_handle(_adapter *adapter, u8 macid, u8 tx_state,
+                          u8 retry_cnt, u8 rts_retry_cnt, bool is_bmc);
+bool rtw_sta_force_ccx_stats(struct sta_info *psta);
 int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr);
 
 u8 SetHalDefVar(_adapter *adapter, HAL_DEF_VARIABLE variable, void *value);
