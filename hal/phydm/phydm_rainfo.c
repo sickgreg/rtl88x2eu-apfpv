@@ -164,11 +164,21 @@ void phydm_h2C_debug(void *dm_void, char input[][16], u32 *_used,
 
 void phydm_fw_fix_rate(void *dm_void, u8 en, u8 macid, u8 bw, u8 rate)
 {
-	struct dm_struct *dm = (struct dm_struct *)dm_void;
-	u32 reg_u32_tmp;
+       struct dm_struct *dm = (struct dm_struct *)dm_void;
+       struct cmn_sta_info *sta = NULL;
+       struct ra_sta_info *ra = NULL;
+       u32 reg_u32_tmp;
 
-	if (dm->support_ic_type & PHYDM_IC_8051_SERIES) {
-		reg_u32_tmp = (bw << 24) | (rate << 16) | (macid << 8) | en;
+       if (macid < ODM_ASSOCIATE_ENTRY_NUM) {
+               sta = dm->phydm_sta_info[macid];
+               if (is_sta_active(sta)) {
+                       ra = &sta->ra_info;
+                       ra->disable_ra = en ? 1 : 0;
+               }
+       }
+
+       if (dm->support_ic_type & PHYDM_IC_8051_SERIES) {
+               reg_u32_tmp = (bw << 24) | (rate << 16) | (macid << 8) | en;
 		odm_set_mac_reg(dm, R_0x4a0, MASKDWORD, reg_u32_tmp);
 
 	} else {
