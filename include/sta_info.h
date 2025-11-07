@@ -99,11 +99,6 @@ struct wlan_acl_pool {
 	_queue	acl_node_q;
 };
 
-enum rtw_tx_rpt_mode {
-	RTW_TX_RPT_MODE_IDLE = 0,
-	RTW_TX_RPT_MODE_BASIC,
-	RTW_TX_RPT_MODE_RETRY,
-};
 
 struct	stainfo_stats	{
 	systime last_rx_time;

@@ -1024,7 +1024,7 @@ void rtw_hal_reqtxrpt(_adapter *padapter, u8 macid)
 
 int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 {
-	struct sta_priv	*pstapriv_primary = &(GET_PRIMARY_ADAPTER(adapter))->stapriv;
+	struct sta_priv *pstapriv_primary = &(GET_PRIMARY_ADAPTER(adapter))->stapriv;
 	struct submit_ctx *gotc2h = NULL;
 	u8 cmd_ret;
 	int wait_ret;
@@ -1048,7 +1048,6 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 		goto exit;
 	}
 	pstapriv_primary->gotc2h = gotc2h;
-	pstapriv_primary->tx_rpt_cmd_mode = RTW_TX_RPT_MODE_BASIC;
 	exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
 	rtw_sctx_init(gotc2h, 60);
