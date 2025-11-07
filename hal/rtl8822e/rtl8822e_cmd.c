@@ -79,6 +79,7 @@ exit:
 void rtl8822e_req_txrpt_cmd(PADAPTER adapter, u8 macid)
 {
 	u8 h2c[RTW_HALMAC_H2C_MAX_SIZE] = {0};
+	u8 h2c_retry[RTW_HALMAC_H2C_MAX_SIZE] = {0};
 
 	AP_REQ_TXRPT_SET_CMD_ID(h2c, CMD_ID_AP_REQ_TXRPT);
 	AP_REQ_TXRPT_SET_CLASS(h2c, CLASS_AP_REQ_TXRPT);
@@ -89,10 +90,13 @@ void rtl8822e_req_txrpt_cmd(PADAPTER adapter, u8 macid)
 	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x00);
 	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c);
 
-	AP_REQ_TXRPT_SET_STA2_MACID(h2c, macid);
-	AP_REQ_TXRPT_SET_RTY_OK_TOTAL(h2c, 0x01);
-	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x01);
-	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c);
+	AP_REQ_TXRPT_SET_CMD_ID(h2c_retry, CMD_ID_AP_REQ_TXRPT);
+	AP_REQ_TXRPT_SET_CLASS(h2c_retry, CLASS_AP_REQ_TXRPT);
+	AP_REQ_TXRPT_SET_STA1_MACID(h2c_retry, macid);
+	AP_REQ_TXRPT_SET_STA2_MACID(h2c_retry, 0xff);
+	AP_REQ_TXRPT_SET_RTY_OK_TOTAL(h2c_retry, 0x01);
+	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c_retry, 0x01);
+	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c_retry);
 }
 
 #define SET_PWR_MODE_SET_BCN_RECEIVING_TIME(h2c_pkt, value)                    \
