@@ -82,15 +82,14 @@ void rtl8822e_req_txrpt_cmd(PADAPTER adapter, u8 macid)
 
 	AP_REQ_TXRPT_SET_CMD_ID(h2c, CMD_ID_AP_REQ_TXRPT);
 	AP_REQ_TXRPT_SET_CLASS(h2c, CLASS_AP_REQ_TXRPT);
-
 	AP_REQ_TXRPT_SET_STA1_MACID(h2c, macid);
 	AP_REQ_TXRPT_SET_STA2_MACID(h2c, 0xff);
 	AP_REQ_TXRPT_SET_RTY_OK_TOTAL(h2c, 0x00);
 	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x00);
 	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c);
 
-	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x01);
-	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c);
+        AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x01);
+        rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c);
 }
 
 #define SET_PWR_MODE_SET_BCN_RECEIVING_TIME(h2c_pkt, value)                    \
@@ -388,45 +387,46 @@ C2HTxRPTHandler_8822e(
 )
 {
 	_irqL	 irqL;
-	/* u8 macid = 0; */
-	/* u8 IniRate = 0; */
 	u16 TxOK = 0, TxFail = 0;
-	struct sta_priv	*pstapriv = &(GET_PRIMARY_ADAPTER(Adapter))->stapriv, *pstapriv_original = NULL;
+	struct sta_priv *pstapriv = &(GET_PRIMARY_ADAPTER(Adapter))->stapriv;
+	struct sta_info *psta = NULL;
 	u8 TxOK0 = 0, TxOK1 = 0;
 	u8 TxFail0 = 0, TxFail1 = 0;
-	struct sta_info *psta = NULL;
-	PADAPTER	adapter_ognl = NULL;
+	struct macid_ctl_t *macid_ctl = adapter_to_macidctl(GET_PRIMARY_ADAPTER(Adapter));
+	_irqL macid_irqL;
+	u8 macid;
 
-	if(!pstapriv->gotc2h) {
-		RTW_WARN("%s,%d: No gotc2h!\n", __FUNCTION__, __LINE__);
-		return;
-	}
-	
-	adapter_ognl = rtw_get_iface_by_id(GET_PRIMARY_ADAPTER(Adapter), pstapriv->c2h_adapter_id);
-	if(!adapter_ognl) {
-		RTW_WARN("%s: No adapter!\n", __FUNCTION__);
-		return;
-	}
+	macid = C2H_AP_REQ_TXRPT_GET_STA1_MACID(CmdBuf);
 
-	psta = rtw_get_stainfo(&adapter_ognl->stapriv, pstapriv->c2h_sta_mac);
+	_enter_critical_bh(&macid_ctl->lock, &macid_irqL);
+	if (macid < macid_ctl->num)
+		psta = macid_ctl->sta[macid];
+	_exit_critical_bh(&macid_ctl->lock, &macid_irqL);
+
 	if (!psta) {
-		RTW_WARN("%s: No corresponding sta_info!\n", __FUNCTION__);
-		return;
+		RTW_WARN("%s: No corresponding sta_info for macid %u!\n", __FUNCTION__, macid);
+		goto release;
 	}
 
-	/* macid = C2H_AP_REQ_TXRPT_GET_STA1_MACID(CmdBuf); */
 	TxOK0 = C2H_AP_REQ_TXRPT_GET_TX_OK1_0(CmdBuf);
 	TxOK1 = C2H_AP_REQ_TXRPT_GET_TX_OK1_1(CmdBuf);
 	TxOK = (TxOK1 << 8) | TxOK0;
 	TxFail0 = C2H_AP_REQ_TXRPT_GET_TX_FAIL1_0(CmdBuf);
 	TxFail1 = C2H_AP_REQ_TXRPT_GET_TX_FAIL1_1(CmdBuf);
 	TxFail = (TxFail1 << 8) | TxFail0;
-	/* IniRate = C2H_AP_REQ_TXRPT_GET_INITIAL_RATE1(CmdBuf); */
 
 	psta->sta_stats.tx_ok_cnt = TxOK;
+	psta->sta_stats.tx_ok_cnt_sum += TxOK;
 	psta->sta_stats.tx_fail_cnt = TxFail;
 	psta->sta_stats.tx_fail_cnt_sum += TxFail;
+
+release:
+	enter_critical_bh(&pstapriv->tx_rpt_lock, &irqL);
+	if (pstapriv->gotc2h)
+		rtw_sctx_done(&pstapriv->gotc2h);
+	exit_critical_bh(&pstapriv->tx_rpt_lock, &irqL);
 }
+
 
 static void
 C2HSPC_STAT_8822e(
@@ -438,33 +438,28 @@ C2HSPC_STAT_8822e(
 	_irqL	 irqL;
 	struct sta_priv *pstapriv = &(GET_PRIMARY_ADAPTER(Adapter))->stapriv;
 	struct sta_info *psta = NULL;
-	struct sta_info *pbcmc_stainfo = rtw_get_bcmc_stainfo(Adapter);
-	_list	*plist, *phead;
 	u8 idx = C2H_SPECIAL_STATISTICS_GET_STATISTICS_IDX(CmdBuf);
-	PADAPTER	adapter_ognl = NULL;
+	struct macid_ctl_t *macid_ctl = adapter_to_macidctl(GET_PRIMARY_ADAPTER(Adapter));
+	_irqL macid_irqL;
 
-	if(!pstapriv->gotc2h) {
-		RTW_WARN("%s, %d: No gotc2h!\n", __FUNCTION__, __LINE__);
-		return;
-	}
-	
-	adapter_ognl = rtw_get_iface_by_id(GET_PRIMARY_ADAPTER(Adapter), pstapriv->c2h_adapter_id);
-	if(!adapter_ognl) {
-		RTW_WARN("%s: No adapter!\n", __FUNCTION__);
-		return;
-	}
+	_enter_critical_bh(&macid_ctl->lock, &macid_irqL);
+	if (idx < macid_ctl->num)
+		psta = macid_ctl->sta[idx];
+	_exit_critical_bh(&macid_ctl->lock, &macid_irqL);
 
-	psta = rtw_get_stainfo(&adapter_ognl->stapriv, pstapriv->c2h_sta_mac);
 	if (!psta) {
-		RTW_WARN("%s: No corresponding sta_info!\n", __FUNCTION__);
-		return;
+		RTW_WARN("%s: No corresponding sta_info for macid %u!\n", __FUNCTION__, idx);
+		goto done;
 	}
+
 	psta->sta_stats.tx_retry_cnt = (C2H_SPECIAL_STATISTICS_GET_DATA3(CmdBuf) << 8) | C2H_SPECIAL_STATISTICS_GET_DATA2(CmdBuf);
 	psta->sta_stats.tx_retry_cnt_sum += psta->sta_stats.tx_retry_cnt;
 
-	enter_critical_bh(&pstapriv->tx_rpt_lock);
-	rtw_sctx_done(&pstapriv->gotc2h);
-	exit_critical_bh(&pstapriv->tx_rpt_lock);
+done:
+        enter_critical_bh(&pstapriv->tx_rpt_lock, &irqL);
+        if (pstapriv->gotc2h)
+                rtw_sctx_done(&pstapriv->gotc2h);
+        exit_critical_bh(&pstapriv->tx_rpt_lock, &irqL);
 }
 #ifdef CONFIG_FW_HANDLE_TXBCN
 #define C2H_SUB_CMD_ID_FW_TBTT_RPT  0X23
