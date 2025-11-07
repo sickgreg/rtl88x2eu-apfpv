@@ -1063,10 +1063,9 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 
         enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
         /* Avoid clearing a newer submit context queued by another request */
-        if (pstapriv_primary->gotc2h == gotc2h || !pstapriv_primary->gotc2h) {
-                pstapriv_primary->gotc2h = NULL;
-                pstapriv_primary->tx_rpt_cmd_mode = RTW_TX_RPT_MODE_IDLE;
-        }
+	if (pstapriv_primary->gotc2h == gotc2h || !pstapriv_primary->gotc2h) {
+		pstapriv_primary->gotc2h = NULL;
+	}
         exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
 	wait_ret = rtw_sctx_wait(gotc2h, "rtw_get_sta_tx_stat retry");
