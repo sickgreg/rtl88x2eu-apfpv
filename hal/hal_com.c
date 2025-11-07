@@ -1027,6 +1027,7 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 	struct sta_priv *pstapriv_primary = &(GET_PRIMARY_ADAPTER(adapter))->stapriv;
 	struct submit_ctx *gotc2h = NULL;
 	u8 cmd_ret;
+	int wait_ret;
 	int ret = _SUCCESS;
 
 	gotc2h = (struct submit_ctx *)rtw_zmalloc(sizeof(struct submit_ctx));
@@ -1057,8 +1058,8 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 	if (cmd_ret != _SUCCESS) {
 		RTW_WARN("rtw_reqtxrpt_cmd fail\n");
 		ret = _FAIL;
-	} else
-		rtw_sctx_wait(gotc2h, __func__);
+		goto clear_ctx;
+	}
 
         enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
         /* Avoid clearing a newer submit context queued by another request */
@@ -1067,10 +1068,17 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 	}
         exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
-	if (cmd_ret == _SUCCESS && gotc2h->status != RTW_SCTX_DONE_SUCCESS) {
-		RTW_WARN("wait for C2H timeout, operation abort!!\n");
+	wait_ret = rtw_sctx_wait(gotc2h, "rtw_get_sta_tx_stat retry");
+	if (wait_ret != _SUCCESS || gotc2h->status != RTW_SCTX_DONE_SUCCESS) {
+		RTW_WARN("wait for retry C2H timeout, operation abort!!\n");
 		ret = _FAIL;
 	}
+
+clear_ctx:
+	enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
+	pstapriv_primary->gotc2h = NULL;
+	pstapriv_primary->tx_rpt_cmd_mode = RTW_TX_RPT_MODE_IDLE;
+	exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
 	_rtw_memset(pstapriv_primary->c2h_sta_mac, 0, ETH_ALEN);
 	pstapriv_primary->c2h_adapter_id = CONFIG_IFACE_NUMBER;
