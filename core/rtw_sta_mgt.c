@@ -235,6 +235,7 @@ u32	_rtw_init_sta_priv(struct	sta_priv *pstapriv)
 	_irqL irqL;
 
 	pstapriv->padapter = adapter;
+	pstapriv->tx_rpt_cmd_mode = RTW_TX_RPT_MODE_IDLE;
 
 	pstapriv->pallocated_stainfo_buf = rtw_zvmalloc(
 		sizeof(struct sta_info) * NUM_STA + MEM_ALIGNMENT_OFFSET);
