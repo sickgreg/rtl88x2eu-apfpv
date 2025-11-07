@@ -1061,18 +1061,11 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 		goto clear_ctx;
 	}
 
-	wait_ret = rtw_sctx_wait(gotc2h, "rtw_get_sta_tx_stat basic");
-	if (wait_ret != _SUCCESS || gotc2h->status != RTW_SCTX_DONE_SUCCESS) {
-		RTW_WARN("wait for C2H timeout, operation abort!!\n");
-		ret = _FAIL;
-		goto clear_ctx;
-	}
-
-	rtw_sctx_init(gotc2h, 60);
-	enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
-	pstapriv_primary->gotc2h = gotc2h;
-	pstapriv_primary->tx_rpt_cmd_mode = RTW_TX_RPT_MODE_RETRY;
-	exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
+        enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
+        /* Avoid clearing a newer submit context queued by another request */
+        if (pstapriv_primary->gotc2h == gotc2h || !pstapriv_primary->gotc2h)
+                pstapriv_primary->gotc2h = NULL;
+        exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
 	cmd_ret = rtw_reqtxrpt_cmd(adapter, mac_id);
 	if (cmd_ret != _SUCCESS) {
