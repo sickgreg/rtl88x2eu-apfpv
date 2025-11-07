@@ -99,6 +99,12 @@ struct wlan_acl_pool {
 	_queue	acl_node_q;
 };
 
+enum rtw_tx_rpt_mode {
+	RTW_TX_RPT_MODE_IDLE = 0,
+	RTW_TX_RPT_MODE_BASIC,
+	RTW_TX_RPT_MODE_RETRY,
+};
+
 struct	stainfo_stats	{
 	systime last_rx_time;
 
@@ -160,6 +166,7 @@ struct	stainfo_stats	{
 	u32 duplicate_cnt;	/* Read & Clear, in proc_get_rx_stat() */
 	u32 rxratecnt[128];	/* Read & Clear, in proc_get_rx_stat() */
 	u32 tx_ok_cnt;		/* Read & Clear, in proc_get_tx_stat() */
+	u32 tx_ok_cnt_sum;	/* cumulative counts */
 	u32 tx_fail_cnt;	/* Read & Clear, in proc_get_tx_stat() */
 	u32 tx_fail_cnt_sum;	/* cumulative counts */
 	u32 tx_retry_cnt;	/* Read & Clear, in proc_get_tx_stat() */
@@ -730,6 +737,7 @@ struct	sta_priv {
 	u8 c2h_sta_mac[ETH_ALEN];
 	u8 c2h_adapter_id;
 	struct submit_ctx *gotc2h;
+	u8 tx_rpt_cmd_mode;
 	_lock tx_rpt_lock;
 };
 
