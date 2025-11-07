@@ -665,6 +665,11 @@ struct sta_info {
 
 #define AID_BMP_LEN(max_aid) ((max_aid + 1) / 8 + (((max_aid + 1) % 8) ? 1 : 0))
 
+enum rtw_tx_rpt_cmd_mode {
+	RTW_TX_RPT_MODE_IDLE = 0,
+	RTW_TX_RPT_MODE_RETRY,
+};
+
 struct	sta_priv {
 
 	u8 *pallocated_stainfo_buf;
