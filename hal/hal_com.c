@@ -1040,6 +1040,8 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 		goto exit;
 	}
 
+	rtw_sctx_init(gotc2h, 60);
+
 	enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
 	if (pstapriv_primary->gotc2h != NULL) {
 		exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
@@ -1047,12 +1049,10 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 		ret = RTW_BUSY;
 		goto exit;
 	}
-	pstapriv_primary->gotc2h = gotc2h;
-	exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
-
-	rtw_sctx_init(gotc2h, 60);
 	_rtw_memcpy(pstapriv_primary->c2h_sta_mac, macaddr, ETH_ALEN);
 	pstapriv_primary->c2h_adapter_id = adapter->iface_id;
+	pstapriv_primary->gotc2h = gotc2h;
+	exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
 	cmd_ret = rtw_reqtxrpt_cmd(adapter, mac_id);
 	if (cmd_ret != _SUCCESS) {
