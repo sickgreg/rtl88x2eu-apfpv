@@ -1118,8 +1118,8 @@ void rtw_refresh_forced_rate_tx_stats(_adapter *adapter)
 			continue;
 
 		if (rtw_get_sta_tx_stat(adapter, psta->cmn.mac_id,
-			          psta->cmn.mac_addr) == RTW_BUSY)
-			break;
+                                  psta->cmn.mac_addr) == RTW_BUSY)
+			continue;
 	}
 }
 
