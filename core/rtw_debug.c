@@ -1314,9 +1314,12 @@ int proc_get_tx_stat(struct seq_file *m, void *v)
 					MAC_ARG(psta->cmn.mac_addr),
 					pstats->tx_ok_cnt, pstats->tx_fail_cnt, pstats->tx_retry_cnt);
 #endif /* ROKU_PRIVATE */
-			}
-		}
-	}
+				pstats->tx_ok_cnt = 0;
+				pstats->tx_fail_cnt = 0;
+				pstats->tx_retry_cnt = 0;
+                        }
+                }
+        }
 	_exit_critical_bh(&pstapriv->sta_hash_lock, &irqL);
 	return 0;
 }
