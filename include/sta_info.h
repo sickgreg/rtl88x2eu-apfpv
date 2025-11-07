@@ -732,6 +732,7 @@ struct	sta_priv {
 	u8 c2h_sta_mac[ETH_ALEN];
 	u8 c2h_adapter_id;
 	struct submit_ctx *gotc2h;
+	u8 tx_rpt_cmd_mode;
 	_lock tx_rpt_lock;
 };
 

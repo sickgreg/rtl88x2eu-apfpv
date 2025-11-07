@@ -78,15 +78,19 @@ exit:
 
 void rtl8822e_req_txrpt_cmd(PADAPTER adapter, u8 macid)
 {
+	struct sta_priv *pstapriv = &(GET_PRIMARY_ADAPTER(adapter))->stapriv;
 	u8 h2c[RTW_HALMAC_H2C_MAX_SIZE] = {0};
+	u8 mode = pstapriv->tx_rpt_cmd_mode;
 
 	AP_REQ_TXRPT_SET_CMD_ID(h2c, CMD_ID_AP_REQ_TXRPT);
 	AP_REQ_TXRPT_SET_CLASS(h2c, CLASS_AP_REQ_TXRPT);
 	AP_REQ_TXRPT_SET_STA1_MACID(h2c, macid);
-	AP_REQ_TXRPT_SET_STA2_MACID(h2c, 0xff);
+	if (mode == RTW_TX_RPT_MODE_RETRY)
+		AP_REQ_TXRPT_SET_STA2_MACID(h2c, macid);
+	else
+		AP_REQ_TXRPT_SET_STA2_MACID(h2c, 0xff);
 	AP_REQ_TXRPT_SET_RTY_OK_TOTAL(h2c, 0x00);
-	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x00);
-	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c);
+	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, mode == RTW_TX_RPT_MODE_RETRY ? 0x01 : 0x00);
 
 	AP_REQ_TXRPT_SET_STA2_MACID(h2c, macid);
 	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x01);
@@ -465,7 +469,9 @@ C2HSPC_STAT_8822e(
 	psta->sta_stats.tx_retry_cnt_sum += psta->sta_stats.tx_retry_cnt;
 
 	enter_critical_bh(&pstapriv->tx_rpt_lock);
-	rtw_sctx_done(&pstapriv->gotc2h);
+	if (pstapriv->tx_rpt_cmd_mode == RTW_TX_RPT_MODE_RETRY)
+		rtw_sctx_done(&pstapriv->gotc2h);
+	pstapriv->tx_rpt_cmd_mode = RTW_TX_RPT_MODE_IDLE;
 	exit_critical_bh(&pstapriv->tx_rpt_lock);
 }
 #ifdef CONFIG_FW_HANDLE_TXBCN
