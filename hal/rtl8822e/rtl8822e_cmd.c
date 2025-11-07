@@ -89,6 +89,8 @@ void rtl8822e_req_txrpt_cmd(PADAPTER adapter, u8 macid)
 	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x00);
 	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c);
 
+	AP_REQ_TXRPT_SET_STA2_MACID(h2c, macid);
+	AP_REQ_TXRPT_SET_RTY_OK_TOTAL(h2c, 0x01);
 	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c, 0x01);
 	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c);
 }
@@ -424,6 +426,7 @@ C2HTxRPTHandler_8822e(
 	/* IniRate = C2H_AP_REQ_TXRPT_GET_INITIAL_RATE1(CmdBuf); */
 
 	psta->sta_stats.tx_ok_cnt = TxOK;
+	psta->sta_stats.tx_ok_cnt_sum += TxOK;
 	psta->sta_stats.tx_fail_cnt = TxFail;
 	psta->sta_stats.tx_fail_cnt_sum += TxFail;
 }
