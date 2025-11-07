@@ -95,7 +95,7 @@ void rtl8822e_req_txrpt_cmd(PADAPTER adapter, u8 macid)
 	AP_REQ_TXRPT_SET_STA1_MACID(h2c_retry, macid);
 	AP_REQ_TXRPT_SET_STA2_MACID(h2c_retry, 0xff);
 	AP_REQ_TXRPT_SET_RTY_OK_TOTAL(h2c_retry, 0x01);
-	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c_retry, 0x00);
+	AP_REQ_TXRPT_SET_RTY_CNT_MACID(h2c_retry, 0x01);
 	rtw_halmac_send_h2c(adapter_to_dvobj(adapter), h2c_retry);
 }
 
