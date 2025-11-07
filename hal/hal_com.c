@@ -1024,7 +1024,7 @@ void rtw_hal_reqtxrpt(_adapter *padapter, u8 macid)
 
 int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 {
-	struct sta_priv	*pstapriv_primary = &(GET_PRIMARY_ADAPTER(adapter))->stapriv;
+	struct sta_priv *pstapriv_primary = &(GET_PRIMARY_ADAPTER(adapter))->stapriv;
 	struct submit_ctx *gotc2h = NULL;
 	u8 cmd_ret;
 	int ret = _SUCCESS;
@@ -1039,14 +1039,17 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 		goto exit;
 	}
 
+	enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
 	if (pstapriv_primary->gotc2h != NULL) {
+		exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 		RTW_INFO("sta tx stat is processing.\n");
 		ret = RTW_BUSY;
 		goto exit;
 	}
+	pstapriv_primary->gotc2h = gotc2h;
+	exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
 	rtw_sctx_init(gotc2h, 60);
-	pstapriv_primary->gotc2h = gotc2h;
 	_rtw_memcpy(pstapriv_primary->c2h_sta_mac, macaddr, ETH_ALEN);
 	pstapriv_primary->c2h_adapter_id = adapter->iface_id;
 
@@ -1057,9 +1060,12 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 	} else
 		rtw_sctx_wait(gotc2h, __func__);
 
-	enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
-	pstapriv_primary->gotc2h = NULL;
-	exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
+        enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
+        /* Avoid clearing a newer submit context queued by another request */
+	if (pstapriv_primary->gotc2h == gotc2h || !pstapriv_primary->gotc2h) {
+		pstapriv_primary->gotc2h = NULL;
+	}
+        exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
 	if (cmd_ret == _SUCCESS && gotc2h->status != RTW_SCTX_DONE_SUCCESS) {
 		RTW_WARN("wait for C2H timeout, operation abort!!\n");
@@ -1118,8 +1124,8 @@ void rtw_refresh_forced_rate_tx_stats(_adapter *adapter)
 			continue;
 
 		if (rtw_get_sta_tx_stat(adapter, psta->cmn.mac_id,
-			          psta->cmn.mac_addr) == RTW_BUSY)
-			break;
+                                  psta->cmn.mac_addr) == RTW_BUSY)
+			continue;
 	}
 }
 
