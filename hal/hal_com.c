@@ -1060,9 +1060,11 @@ int rtw_get_sta_tx_stat(_adapter *adapter, u8 mac_id, u8 *macaddr)
 	} else
 		rtw_sctx_wait(gotc2h, __func__);
 
-	enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
-	pstapriv_primary->gotc2h = NULL;
-	exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
+        enter_critical_bh(&pstapriv_primary->tx_rpt_lock);
+        /* Avoid clearing a newer submit context queued by another request */
+        if (pstapriv_primary->gotc2h == gotc2h || !pstapriv_primary->gotc2h)
+                pstapriv_primary->gotc2h = NULL;
+        exit_critical_bh(&pstapriv_primary->tx_rpt_lock);
 
 	if (cmd_ret == _SUCCESS && gotc2h->status != RTW_SCTX_DONE_SUCCESS) {
 		RTW_WARN("wait for C2H timeout, operation abort!!\n");
