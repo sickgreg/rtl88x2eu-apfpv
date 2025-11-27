@@ -6565,6 +6565,12 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("dynamic_rrsr", proc_get_dyn_rrsr, proc_set_dyn_rrsr),
 	RTW_PROC_HDL_SSEQ("en_fwps", proc_get_en_fwps, proc_set_en_fwps),
 
+	RTW_PROC_HDL_SSEQ("rssi_a", proc_get_rssi_a, NULL),
+	RTW_PROC_HDL_SSEQ("rssi_b", proc_get_rssi_b, NULL),
+	RTW_PROC_HDL_SSEQ("snr_a", proc_get_snr_a, NULL),
+	RTW_PROC_HDL_SSEQ("snr_b", proc_get_snr_b, NULL),
+	RTW_PROC_HDL_SSEQ("pubq_free_page", proc_get_pubq_free_page, NULL),
+
 	/* RTW_PROC_HDL_SSEQ("path_rssi", proc_get_two_path_rssi, NULL),
 	* 	RTW_PROC_HDL_SSEQ("rssi_disp",proc_get_rssi_disp, proc_set_rssi_disp), */
 

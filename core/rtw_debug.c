@@ -16,6 +16,11 @@
 
 #include <drv_types.h>
 #include <hal_data.h>
+#include <hal_com_reg.h>
+
+#ifndef REG_FIFOPAGE_INFO_5
+#define REG_FIFOPAGE_INFO_5 0x0240
+#endif
 
 #ifdef CONFIG_RTW_DEBUG
 const char *rtw_log_level_str[] = {
@@ -3687,10 +3692,10 @@ int proc_get_trx_info_debug(struct seq_file *m, void *v)
 
 int proc_get_rx_signal(struct seq_file *m, void *v)
 {
-	struct net_device *dev = m->private;
-	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+        struct net_device *dev = m->private;
+        _adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 
-	RTW_PRINT_SEL(m, "rssi:%d\n", padapter->recvpriv.rssi);
+        RTW_PRINT_SEL(m, "rssi:%d\n", padapter->recvpriv.rssi);
 #ifdef CONFIG_MP_INCLUDED
 	if (padapter->registrypriv.mp_mode == 1) {
 		struct dm_struct *odm = adapter_to_phydm(padapter);
@@ -3722,16 +3727,81 @@ int proc_get_rx_signal(struct seq_file *m, void *v)
 	}
 #ifdef DBG_RX_SIGNAL_DISPLAY_RAW_DATA
 	rtw_odm_get_perpkt_rssi(m, padapter);
-	rtw_get_raw_rssi_info(m, padapter);
+        rtw_get_raw_rssi_info(m, padapter);
 #endif
-	return 0;
+        return 0;
+}
+
+static s8 proc_get_latest_snr(_adapter *padapter, u8 rf_path)
+{
+        struct hal_spec_t *hal_spec = GET_HAL_SPEC(padapter);
+        struct rx_raw_rssi *raw = &padapter->recvpriv.raw_rssi_info;
+
+        if (rf_path >= hal_spec->rf_reg_path_num)
+                return 0;
+
+        return (s8)raw->ofdm_snr[rf_path];
+}
+
+int proc_get_rssi_a(struct seq_file *m, void *v)
+{
+        struct net_device *dev = m->private;
+        _adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+        struct dm_struct *dm = adapter_to_phydm(padapter);
+
+        RTW_PRINT_SEL(m, "%d\n", dm->rssi_a);
+
+        return 0;
+}
+
+int proc_get_rssi_b(struct seq_file *m, void *v)
+{
+        struct net_device *dev = m->private;
+        _adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+        struct dm_struct *dm = adapter_to_phydm(padapter);
+
+        RTW_PRINT_SEL(m, "%d\n", dm->rssi_b);
+
+        return 0;
+}
+
+int proc_get_snr_a(struct seq_file *m, void *v)
+{
+        struct net_device *dev = m->private;
+        _adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+
+        RTW_PRINT_SEL(m, "%d\n", proc_get_latest_snr(padapter, RF_PATH_A));
+
+        return 0;
+}
+
+int proc_get_snr_b(struct seq_file *m, void *v)
+{
+        struct net_device *dev = m->private;
+        _adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+
+        RTW_PRINT_SEL(m, "%d\n", proc_get_latest_snr(padapter, RF_PATH_B));
+
+        return 0;
+}
+
+int proc_get_pubq_free_page(struct seq_file *m, void *v)
+{
+        struct net_device *dev = m->private;
+        _adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+        u32 reg = rtw_read32(padapter, REG_FIFOPAGE_INFO_5);
+        u16 pubq = (u16)((reg & 0xFFF0000) >> 16);
+
+        RTW_PRINT_SEL(m, "%u\n", pubq);
+
+        return 0;
 }
 
 ssize_t proc_set_rx_signal(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
 {
-	struct net_device *dev = data;
-	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
-	char tmp[32];
+        struct net_device *dev = data;
+        _adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+        char tmp[32];
 	u32 is_signal_dbg, signal_strength;
 
 	if (count < 1)

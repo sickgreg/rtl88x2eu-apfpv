@@ -186,11 +186,20 @@ According to the module vendor's ambiguous document and the crab's mysterious dr
 4. ```iw``` Set the channel to 10MHz bandwidth
 5. If there are any tools complain about the Wi-Fi regularities when setting up a 10MHz AP,  try setting the channel plan manually by ```echo 0x3E > /proc/net/rtl88x2eu/<wlan>/chan_plan```.
 6. Check the ACK timeout setting below if the range is >\~3km
-7. Check ```/proc/net/rtl88x2eu/<wlan>/rate_ctl``` for manually control of the rate if needed. See [@Vito-Swift's tutorial here](https://github.com/Vito-Swift/rtl8814au-ext/blob/main/doc/how_to_do_unicast_rc.md)  
+7. Check ```/proc/net/rtl88x2eu/<wlan>/rate_ctl``` for manually control of the rate if needed. See [@Vito-Swift's tutorial here](https://github.com/Vito-Swift/rtl8814au-ext/blob/main/doc/how_to_do_unicast_rc.md)
+
+### Lightweight signal/queue sampling
+The driver now provides minimal procfs nodes for cheap polling without the heavy `trx_info` or `trx_info_debug` dumps:
+
+- ```/proc/net/rtl88x2eu/<wlan>/rssi_a```, ```rssi_b```: current per-path RSSI reported by ODM.
+- ```/proc/net/rtl88x2eu/<wlan>/snr_a```, ```snr_b```: latest per-path SNR (in dB) from the most recent OFDM packet.
+- ```/proc/net/rtl88x2eu/<wlan>/pubq_free_page```: available public TX FIFO pages.
+
+Each file returns a single integer and avoids extra register scans or string formatting, making them suitable for frequent sampling loops.
 
 ## EDCCA
-WARNING: YOU SHOULD NOT USE THIS (unless someone's DJIs next to you f***ed up all channels XD). It's not fair.  
-DISCLAIMER: There's no guarantee of its performance. This may damage your hardware and I'm not gonna pay for it. Use it at your own risk. Please comply with any wireless regulations in your area.  
+WARNING: YOU SHOULD NOT USE THIS (unless someone's DJIs next to you f***ed up all channels XD). It's not fair.
+DISCLAIMER: There's no guarantee of its performance. This may damage your hardware and I'm not gonna pay for it. Use it at your own risk. Please comply with any wireless regulations in your area.
 
 ### Override default EDCCA Threshold  
 To override dafault EDCCA threshold, check ```cat /proc/net/rtl88x2eu/<wlan0>/edcca_threshold_jaguar3_override```.  
