@@ -5,6 +5,36 @@ The rtl88x2eu driver exposes several procfs helpers under
 `/proc/net/rtl88x2eu/<iface>/`. The sections below walk through the two
 custom features that were added in this fork.
 
+Lightweight RSSI/SNR/PUBQ sampling
+----------------------------------
+
+Use these minimal procfs nodes when you need high-rate telemetry without
+the heavy `trx_info`/`trx_info_debug` dumps:
+
+- `rssi_a`, `rssi_b`: current per-path RSSI reported by ODM.
+- `snr_a`, `snr_b`: latest per-path OFDM SNR samples (dB).
+- `pubq_free_page`: available public TX FIFO pages.
+
+Each file prints a single integer, so userland loops like `watch -n0.1
+cat /proc/net/rtl88x2eu/wlan0/rssi_a` avoid extra parsing and keep CPU
+overhead low.
+
+SNR sampling is gated behind the driver’s raw RX capture flag. Enable it
+when you want non-zero `snr_a`/`snr_b` values and disable it afterward to
+avoid unnecessary book-keeping:
+
+```
+# turn on per-packet SNR capture
+echo 1 > /proc/net/rtl88x2eu/wlan0/rx_info_msg
+
+# turn it back off when you are done
+echo 0 > /proc/net/rtl88x2eu/wlan0/rx_info_msg
+```
+
+Only OFDM packets update the SNR cache. If you force a CCK-only rate or
+there is no traffic, the `snr_*` entries will remain at 0 until the
+device receives OFDM frames with the capture flag enabled.
+
 Queue Flush Control (`flush_tx`)
 --------------------------------
 
