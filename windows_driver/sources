@@ -1,0 +1,5 @@
+TARGETNAME=eucard
+TARGETTYPE=DRIVER
+SOURCES=driver.c \
+        hw_init.c \
+        register.c
