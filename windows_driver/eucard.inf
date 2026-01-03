@@ -1,0 +1,40 @@
+; eucard.inf
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = Net
+ClassGuid   = {4d36e972-e325-11ce-bfc1-08002be10318}
+Provider    = %Realtek%
+DriverVer   = 01/01/2024,1.0.0.0
+CatalogFile = eucard.cat
+
+[Manufacturer]
+%Realtek% = Realtek,NTx86
+
+[Realtek.NTx86]
+%eucard.DeviceDesc% = eucard.Install, USB\VID_0BDA&PID_8812
+%eucard.DeviceDesc% = eucard.Install, USB\VID_0BDA&PID_E822
+%eucard.DeviceDesc% = eucard.Install, USB\VID_0BDA&PID_A82A
+%eucard.DeviceDesc% = eucard.Install, USB\VID_0BDA&PID_A81A
+
+[eucard.Install.NT]
+Characteristics = 0x84 ; NCF_PHYSICAL + NCF_FILTER
+BusType         = 15  ; NdisBusTypeUsb
+CopyFiles       = eucard.CopyFiles
+
+[eucard.CopyFiles]
+eucard.sys
+
+[SourceDisksNames]
+1 = %DiskName%
+
+[SourceDisksFiles]
+eucard.sys = 1
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+[Strings]
+Realtek = "Realtek"
+eucard.DeviceDesc = "Realtek EU Card Wireless LAN Adapter"
+DiskName = "Realtek EU Card Installation Disk"
