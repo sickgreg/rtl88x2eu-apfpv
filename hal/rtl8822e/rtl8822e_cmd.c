@@ -660,8 +660,7 @@ void rtl8822e_c2h_handler_no_io(PADAPTER adapter, u8 *pbuf, u16 length)
 	case C2H_MAC_HIDDEN_RPT_2:
 #endif
 	case C2H_BCN_EARLY_RPT:
-	case C2H_LPS_STATUS_RPT:	
-	case C2H_EXTEND:
+	case C2H_LPS_STATUS_RPT:
 		/* no I/O, process directly */
 		process_c2h_event(adapter, pbuf, length);
 		break;
