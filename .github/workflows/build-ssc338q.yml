@@ -1,0 +1,74 @@
+name: build-ssc338q
+
+on:
+  workflow_dispatch:
+    inputs:
+      toolchain_url:
+        description: "URL to a tarball containing the OpenIPC arm toolchain (must include bin/)"
+        required: true
+        type: string
+      kernel_headers_url:
+        description: "URL to a tarball containing the ssc338q kernel headers or source tree"
+        required: true
+        type: string
+      kernel_version:
+        description: "Override kernel version (leave empty to derive from utsrelease.h)"
+        required: false
+        type: string
+      toolchain_prefix:
+        description: "Toolchain prefix inside bin/ (including trailing dash)"
+        required: false
+        default: "arm-openipc-linux-gnueabihf-"
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git bc flex bison libncurses-dev libssl-dev libelf-dev xz-utils
+
+      - name: Fetch toolchain
+        run: |
+          mkdir -p toolchain
+          curl -L "${{ inputs.toolchain_url }}" -o toolchain.tar
+          tar -xf toolchain.tar -C toolchain
+
+      - name: Fetch kernel headers
+        run: |
+          mkdir -p kernel
+          curl -L "${{ inputs.kernel_headers_url }}" -o kernel.tar
+          tar -xf kernel.tar -C kernel
+          if [ -d kernel/output/build/linux-ssc338q ]; then
+            echo "KERNEL_DIR=${GITHUB_WORKSPACE}/kernel/output/build/linux-ssc338q" >> "$GITHUB_ENV"
+          else
+            candidate=$(find kernel -maxdepth 2 -type d -name "linux-ssc338q" | head -n1)
+            if [ -n "$candidate" ]; then
+              echo "KERNEL_DIR=${GITHUB_WORKSPACE}/${candidate}" >> "$GITHUB_ENV"
+            else
+              echo "KERNEL_DIR=${GITHUB_WORKSPACE}/kernel" >> "$GITHUB_ENV"
+            fi
+          fi
+
+      - name: Build module
+        env:
+          TOOLCHAIN_PREFIX: ${{ github.workspace }}/toolchain/bin/${{ inputs.toolchain_prefix }}
+          KERNEL_VERSION: ${{ inputs.kernel_version }}
+        run: |
+          if [ -n "$KERNEL_VERSION" ]; then
+            export KERNEL_VERSION
+          fi
+          scripts/build_ssc338q_driver.sh
+
+      - name: Upload module artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssc338q-module
+          path: "*.ko"
+          if-no-files-found: warn
