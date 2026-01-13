@@ -103,6 +103,7 @@ sint _rtw_init_recv_priv(struct recv_priv *precvpriv, _adapter *padapter)
 #else
 	precvpriv->store_law_data_flag = 0;
 #endif
+	_rtw_memset(precvpriv->ofdm_snr_latest, 0, sizeof(precvpriv->ofdm_snr_latest));
 
 	rtw_os_recv_resource_init(precvpriv, padapter);
 
@@ -5039,4 +5040,3 @@ void dump_rx_bh_tk(void *sel, struct recv_priv *recv)
 	);
 }
 #endif /* DBG_RX_BH_TRACKING */
-
