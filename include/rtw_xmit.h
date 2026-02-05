@@ -802,6 +802,10 @@ struct	xmit_priv	{
 	u64	tx_drop;
 	u64	last_tx_pkts;
 
+	ATOMIC_T ccx_tx_ok_cnt;
+	ATOMIC_T ccx_tx_fail_cnt;
+	ATOMIC_T ccx_tx_retry_cnt;
+
 	struct hw_xmit *hwxmits;
 	u8	hwxmit_entry;
 
