@@ -228,6 +228,8 @@ static s32 update_txdesc(struct xmit_frame *pxmitframe, u8 *pmem, s32 sz, u8 bag
 				if (!padapter->data_fb)
 					SET_TX_DESC_DISDATAFB_8822E(ptxdesc, 1);
 			}
+			if (!bmcst && padapter->fix_rate != 0xFF)
+				SET_TX_DESC_SPE_RPT_8822E(ptxdesc, 1);
 
 			if (pattrib->ldpc)
 				SET_TX_DESC_DATA_LDPC_8822E(ptxdesc, 1);
