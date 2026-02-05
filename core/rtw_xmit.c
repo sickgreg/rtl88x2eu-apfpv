@@ -83,6 +83,9 @@ s32	_rtw_init_xmit_priv(struct xmit_priv *pxmitpriv, _adapter *padapter)
 	_rtw_spinlock_init(&pxmitpriv->lock);
 	_rtw_spinlock_init(&pxmitpriv->lock_sctx);
 	_rtw_init_sema(&pxmitpriv->xmit_sema, 0);
+	ATOMIC_SET(&pxmitpriv->ccx_tx_ok_cnt, 0);
+	ATOMIC_SET(&pxmitpriv->ccx_tx_fail_cnt, 0);
+	ATOMIC_SET(&pxmitpriv->ccx_tx_retry_cnt, 0);
 
 	/*
 	Please insert all the queue initializaiton using _rtw_init_queue below
@@ -6915,4 +6918,3 @@ void rtw_hci_flush(_adapter *padapter)
 	else
 		RTW_WARN("hal ops: hci_flush is NULL\n");
 }
-

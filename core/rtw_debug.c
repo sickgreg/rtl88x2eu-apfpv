@@ -1273,6 +1273,33 @@ ssize_t proc_set_sta_tx_stat(struct file *file, const char __user *buffer, size_
 	return count;
 }
 
+int proc_get_tx_ok_cnt(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+
+	RTW_PRINT_SEL(m, "%u\n", ATOMIC_READ(&adapter->xmitpriv.ccx_tx_ok_cnt));
+	return 0;
+}
+
+int proc_get_tx_fail_cnt(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+
+	RTW_PRINT_SEL(m, "%u\n", ATOMIC_READ(&adapter->xmitpriv.ccx_tx_fail_cnt));
+	return 0;
+}
+
+int proc_get_tx_retry_cnt(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+
+	RTW_PRINT_SEL(m, "%u\n", ATOMIC_READ(&adapter->xmitpriv.ccx_tx_retry_cnt));
+	return 0;
+}
+
 int proc_get_tx_stat(struct seq_file *m, void *v)
 {
 	_irqL	irqL;
