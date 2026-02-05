@@ -1273,12 +1273,9 @@ ssize_t proc_set_sta_tx_stat(struct file *file, const char __user *buffer, size_
 	return count;
 }
 
-static u32 _rtw_read_reset_atomic(ATOMIC_T *v)
+static u32 _rtw_read_atomic(ATOMIC_T *v)
 {
-	u32 val = ATOMIC_READ(v);
-
-	ATOMIC_SET(v, 0);
-	return val;
+	return ATOMIC_READ(v);
 }
 
 int proc_get_tx_ok_cnt(struct seq_file *m, void *v)
@@ -1286,7 +1283,7 @@ int proc_get_tx_ok_cnt(struct seq_file *m, void *v)
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 
-	RTW_PRINT_SEL(m, "%u\n", _rtw_read_reset_atomic(&adapter->xmitpriv.ccx_tx_ok_cnt));
+	RTW_PRINT_SEL(m, "%u\n", _rtw_read_atomic(&adapter->xmitpriv.ccx_tx_ok_cnt));
 	return 0;
 }
 
@@ -1295,7 +1292,7 @@ int proc_get_tx_fail_cnt(struct seq_file *m, void *v)
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 
-	RTW_PRINT_SEL(m, "%u\n", _rtw_read_reset_atomic(&adapter->xmitpriv.ccx_tx_fail_cnt));
+	RTW_PRINT_SEL(m, "%u\n", _rtw_read_atomic(&adapter->xmitpriv.ccx_tx_fail_cnt));
 	return 0;
 }
 
@@ -1304,7 +1301,7 @@ int proc_get_tx_retry_cnt(struct seq_file *m, void *v)
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 
-	RTW_PRINT_SEL(m, "%u\n", _rtw_read_reset_atomic(&adapter->xmitpriv.ccx_tx_retry_cnt));
+	RTW_PRINT_SEL(m, "%u\n", _rtw_read_atomic(&adapter->xmitpriv.ccx_tx_retry_cnt));
 	return 0;
 }
 
