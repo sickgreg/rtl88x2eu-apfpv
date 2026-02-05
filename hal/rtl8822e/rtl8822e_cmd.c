@@ -366,18 +366,29 @@ void rtl8822e_download_BTCoex_AP_mode_rsvd_page(PADAPTER adapter)
  */
 static void c2h_ccx_rpt(PADAPTER adapter, u8 *pdata)
 {
-#ifdef CONFIG_XMIT_ACK
 	u8 tx_state;
-
+	u8 bmc;
+	u8 retry_cnt;
 
 	tx_state = CCX_RPT_GET_TX_STATE(pdata);
+	bmc = CCX_RPT_GET_BMC(pdata);
+	retry_cnt = CCX_RPT_GET_DATA_RETRY_COUNT(pdata);
 
+#ifdef CONFIG_XMIT_ACK
 	/* 0 means success, 1 means retry drop */
 	if (tx_state == 0)
 		rtw_ack_tx_done(&adapter->xmitpriv, RTW_SCTX_DONE_SUCCESS);
 	else
 		rtw_ack_tx_done(&adapter->xmitpriv, RTW_SCTX_DONE_CCX_PKT_FAIL);
 #endif /* CONFIG_XMIT_ACK */
+
+	if (!bmc) {
+		ATOMIC_ADD(&adapter->xmitpriv.ccx_tx_retry_cnt, retry_cnt);
+		if (tx_state == 0)
+			ATOMIC_ADD(&adapter->xmitpriv.ccx_tx_ok_cnt, 1);
+		else
+			ATOMIC_ADD(&adapter->xmitpriv.ccx_tx_fail_cnt, 1);
+	}
 }
 
 static void
