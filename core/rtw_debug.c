@@ -2897,6 +2897,67 @@ int proc_get_rate_ctl(struct seq_file *m, void *v)
 	return 0;
 }
 
+static void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rate, const char *event, const char *reason)
+{
+	unsigned long flags;
+	u8 head, next;
+
+	if (!adapter)
+		return;
+
+	adapter->rate_ctl_event_seq++;
+	rtw_sprintf(adapter->rate_ctl_event, sizeof(adapter->rate_ctl_event),
+		    "%llu %u %s %s 0x%02x 0x%02x %d %s",
+		    (unsigned long long)adapter->rate_ctl_event_seq,
+		    rtw_systime_to_ms(rtw_get_current_time()),
+		    event ? event : "RATE_SET",
+		    ADPT_ARG(adapter),
+		    from_rate,
+		    to_rate,
+		    0,
+		    reason ? reason : "USER_SET");
+
+	spin_lock_irqsave(&adapter->rate_ctl_event_lock, flags);
+	head = adapter->rate_ctl_event_q_head;
+	next = (head + 1) % ARRAY_SIZE(adapter->rate_ctl_event_q);
+	if (next == adapter->rate_ctl_event_q_tail)
+		adapter->rate_ctl_event_q_tail = (adapter->rate_ctl_event_q_tail + 1) % ARRAY_SIZE(adapter->rate_ctl_event_q);
+	_rtw_memcpy(adapter->rate_ctl_event_q[head], adapter->rate_ctl_event, sizeof(adapter->rate_ctl_event_q[head]));
+	adapter->rate_ctl_event_q_head = next;
+	spin_unlock_irqrestore(&adapter->rate_ctl_event_lock, flags);
+	wake_up_interruptible(&adapter->rate_ctl_event_wq);
+}
+
+int proc_get_rate_ctl_event(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+
+	if (adapter->rate_ctl_event_seq == 0)
+		RTW_PRINT_SEL(m, "0 0 RATE_INIT %s 0xff 0xff 0 NONE\n", ADPT_ARG(adapter));
+	else
+		RTW_PRINT_SEL(m, "%s\n", adapter->rate_ctl_event);
+
+	return 0;
+}
+
+ssize_t proc_set_rate_ctl_event(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+	char tmp[128] = {0};
+
+	if (count < 1 || count > sizeof(tmp))
+		return -EFAULT;
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		tmp[sizeof(tmp) - 1] = '\0';
+		rtw_rate_ctl_event_notify(adapter, 0xFF, 0xFF, "USER_EVENT", tmp);
+	}
+
+	return count;
+}
+
 #ifdef 	CONFIG_PHDYM_FW_FIXRATE
 void phydm_fw_fix_rate(void *dm_void, u8 en, u8	macid, u8 bw, u8 rate);
 #endif
@@ -2985,6 +3046,12 @@ ssize_t proc_set_rate_ctl(struct file *file, const char __user *buffer, size_t c
 
 			if (adapter->fix_bw != 0xFF && fix_rate_ori != fix_rate)
 				rtw_run_in_thread_cmd(adapter, ((void *)(rtw_update_tx_rate_bmp)), adapter_to_dvobj(adapter));
+
+			if (fix_rate_ori != fix_rate) {
+				rtw_rate_ctl_event_notify(adapter, fix_rate_ori, fix_rate,
+					(fix_rate < fix_rate_ori) ? "RATE_DROP" : "RATE_RISE",
+					"USER_SET");
+			}
 		}
 		if (num >= 2)
 			adapter->data_fb = data_fb ? 1 : 0;

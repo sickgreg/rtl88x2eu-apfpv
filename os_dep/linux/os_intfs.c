@@ -2657,6 +2657,10 @@ u8 rtw_init_default_value(_adapter *padapter)
 #endif
 
 	/* for debug purpose */
+	init_waitqueue_head(&padapter->rate_ctl_event_wq);
+	spin_lock_init(&padapter->rate_ctl_event_lock);
+	padapter->rate_ctl_event_q_head = 0;
+	padapter->rate_ctl_event_q_tail = 0;
 	padapter->fix_rate = 0xFF;
 	padapter->data_fb = 0;
 	padapter->fix_bw = 0xFF;
@@ -3127,6 +3131,10 @@ u8 rtw_init_drv_sw(_adapter *padapter)
 	}
 
 	padapter->setband = WIFI_FREQUENCY_BAND_AUTO;
+	init_waitqueue_head(&padapter->rate_ctl_event_wq);
+	spin_lock_init(&padapter->rate_ctl_event_lock);
+	padapter->rate_ctl_event_q_head = 0;
+	padapter->rate_ctl_event_q_tail = 0;
 	padapter->fix_rate = 0xFF;
 	padapter->power_offset = 0;
 	padapter->rsvd_page_offset = 0;
@@ -4073,7 +4081,7 @@ int _netdev_open(struct net_device *pnetdev)
 			}
 	#endif /* CONFIG_BT_COEXIST_SOCKET_TRX */
 
-			_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 2000);
+			_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 200);
 
 	#ifndef CONFIG_IPS_CHECK_IN_WD
 			rtw_set_pwr_state_check_timer(pwrctrlpriv);
@@ -4213,7 +4221,7 @@ int _netdev_open(struct net_device *pnetdev)
 	}
 	padapter->net_closed = _FALSE;
 
-	_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 2000);
+	_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 200);
 
 #ifndef CONFIG_IPS_CHECK_IN_WD
 	rtw_set_pwr_state_check_timer(pwrctrlpriv);
@@ -4353,7 +4361,7 @@ int  ips_netdrv_open(_adapter *padapter)
 #ifndef CONFIG_IPS_CHECK_IN_WD
 	rtw_set_pwr_state_check_timer(adapter_to_pwrctl(padapter));
 #endif
-	_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 2000);
+	_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 200);
 
 	return _SUCCESS;
 
@@ -4459,7 +4467,7 @@ int _pm_netdev_open(_adapter *padapter)
 		#endif /* !RTW_HALMAC */
 
 		{
-			_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 2000);
+			_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 200);
 
 	#ifndef CONFIG_IPS_CHECK_IN_WD
 			rtw_set_pwr_state_check_timer(pwrctrlpriv);
@@ -5640,7 +5648,7 @@ int rtw_resume_process_wow(_adapter *padapter)
 
 	if (pwrpriv->wowlan_mode == _TRUE) {
 		pwrpriv->bips_processing = _FALSE;
-		_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 2000);
+		_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 200);
 #ifndef CONFIG_IPS_CHECK_IN_WD
 		rtw_set_pwr_state_check_timer(pwrpriv);
 #endif
@@ -5764,7 +5772,7 @@ int rtw_resume_process_ap_wow(_adapter *padapter)
 #endif /* CONFIG_RESUME_IN_WORKQUEUE */
 
 	pwrpriv->bips_processing = _FALSE;
-	_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 2000);
+	_set_timer(&adapter_to_dvobj(padapter)->dynamic_chk_timer, 200);
 #ifndef CONFIG_IPS_CHECK_IN_WD
 	rtw_set_pwr_state_check_timer(pwrpriv);
 #endif
