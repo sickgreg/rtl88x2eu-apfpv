@@ -122,6 +122,64 @@ According to the module vendor's ambiguous document and the crab's mysterious dr
 6. Check the ACK timeout setting below if the range is >\~3km
 7. Check ```/proc/net/rtl88x2eu/<wlan>/rate_ctl``` for manually control of the rate if needed. See [@Vito-Swift's tutorial here](https://github.com/Vito-Swift/rtl8814au-ext/blob/main/doc/how_to_do_unicast_rc.md)  
 
+#### Event-Driven userspace reaction (encoder bitrate controller)
+`/proc/net/rtl88x2eu/<wlan>/rate_ctl` is a snapshot/config node (good for read/write control), but it is **not** an event queue by itself.
+This branch also exposes `/proc/net/rtl88x2eu/<wlan>/rate_ctl_event` as a queued event endpoint with poll/wakeup support.
+
+**Current status:** useful prototype, but not a fully complete production pipeline yet.
+
+If you want an event-driven encoder controller in C (instead of continuous probing), the best approach is:
+
+1. Add a dedicated procfs event node in driver code with a wait queue (`wait_queue_head_t`) and sequence counter.
+2. Implement `.proc_poll` so userspace can block in `poll()`/`epoll()`.
+3. On a rate-drop trigger in driver logic, update the event payload, increment sequence, and call `wake_up_interruptible()`.
+4. In userspace, use `epoll_wait()` and read the event payload only when `POLLIN` is signaled.
+
+If you cannot patch the kernel side yet, the fallback is short-interval polling with backoff (for example 20~50ms when link is unstable, 200~500ms when stable).
+
+Suggested single-line payload (what is sent to userspace):
+```
+<seq> <ts_ms> <event> <ifname> <from_rate_id> <to_rate_id> <rssi> <reason>
+```
+
+Example:
+```
+1842 1711034123456 RATE_DROP wlan0 0x97 0x82 -74 RETRY_HIGH
+```
+
+Field notes:
+- `seq`: monotonic event sequence number (detect missed events)
+- `ts_ms`: monotonic timestamp in milliseconds from kernel boot
+- `event`: `RATE_DROP`, `RATE_RISE`, `LINK_DEGRADED`, `LINK_RECOVERED`
+- `ifname`: interface name (`wlan0`, ...)
+- `from_rate_id` / `to_rate_id`: numeric hw-rate IDs (`0x..`) for deterministic userspace parsing
+- `rssi`: current RSSI estimate in dBm
+- `reason`: compact trigger reason (`RETRY_HIGH`, `PER_HIGH`, `RSSI_LOW`, ...)
+
+### userspace helper: `userspace/br_setter.c`
+`br_setter.c` consumes the payload above and coordinates driver/encoder updates:
+- on rate drop: set encoder bitrate first, wait 50ms, then set driver rate
+- on rate rise: set driver rate first, then set encoder bitrate
+
+It performs the encoder update via built-in HTTP (`GET /api/v1/set?video0.bitrate=<bps>`) and uses a conservative default of `55%` of estimated PHY rate.
+The `rate_ctl_event` proc endpoint now supports queue + wakeup semantics for userspace (`poll()` wakes when a new event is queued).
+`br_setter.c` includes safety behavior for HTTP failures:
+- on drop, driver rate is not reduced unless encoder update succeeds
+- on rise, if encoder update fails, driver rate is rolled back to previous rate
+
+##### Is it worth it?
+Usually **yes** for FPV links that change quickly (flying behind trees/buildings), because it reduces the time mismatch between link capacity and encoder bitrate.
+
+It is most worth it when:
+- bitrate overshoot currently causes visible stutter/freezes after sudden fades
+- you can tolerate a bit more control-path complexity
+- your CPU still has headroom for faster checks/coordination
+
+It may be less worth it when:
+- link conditions are mostly stable
+- current end-to-end latency/jitter is already acceptable
+- you need the absolute simplest setup with minimal moving parts
+
 ## EDCCA
 WARNING: YOU SHOULD NOT USE THIS (unless someone's DJIs next to you f***ed up all channels XD). It's not fair.  
 DISCLAIMER: There's no guarantee of its performance. This may damage your hardware and I'm not gonna pay for it. Use it at your own risk. Please comply with any wireless regulations in your area.  

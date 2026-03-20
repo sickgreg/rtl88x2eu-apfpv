@@ -3954,7 +3954,7 @@ void rtw_dynamic_check_timer_handlder(void *ctx)
 		rtw_dynamic_chk_wk_cmd(adapter);
 
 exit:
-	_set_timer(&pdvobj->dynamic_chk_timer, 2000);
+	_set_timer(&pdvobj->dynamic_chk_timer, 200);
 }
 
 

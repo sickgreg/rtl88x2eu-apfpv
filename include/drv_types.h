@@ -1902,6 +1902,11 @@ struct _ADAPTER {
 	struct iw_statistics iwstats;
 	struct proc_dir_entry *dir_dev;/* for proc directory */
 	struct proc_dir_entry *dir_odm;
+	wait_queue_head_t rate_ctl_event_wq;
+	spinlock_t rate_ctl_event_lock;
+	u8 rate_ctl_event_q_head;
+	u8 rate_ctl_event_q_tail;
+	char rate_ctl_event_q[8][128];
 
 #ifdef CONFIG_MCC_MODE
 	struct proc_dir_entry *dir_mcc;
@@ -1995,6 +2000,8 @@ struct _ADAPTER {
 	u8 fix_rate;
 	u8 fix_bw;
 	u8 data_fb; /* data rate fallback, valid only when fix_rate is not 0xff */
+	u64 rate_ctl_event_seq;
+	char rate_ctl_event[128];
 	u8 power_offset;
 	u8 driver_tx_bw_mode;
 	u8 rsvd_page_offset;

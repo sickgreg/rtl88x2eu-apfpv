@@ -14,6 +14,7 @@
  *****************************************************************************/
 
 #include <linux/ctype.h>	/* tolower() */
+#include <linux/poll.h>
 #include <drv_types.h>
 #include <hal_data.h>
 #include "rtw_proc.h"
@@ -6878,6 +6879,98 @@ static const struct rtw_proc_ops rtw_adapter_proc_sseq_fops = {
 #endif
 };
 
+static int rtw_rate_ctl_event_open(struct inode *inode, struct file *file)
+{
+	struct net_device *dev = proc_get_parent_data(inode);
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+
+	file->private_data = adapter;
+	return 0;
+}
+
+static ssize_t rtw_rate_ctl_event_read(struct file *file, char __user *buffer, size_t count, loff_t *ppos)
+{
+	_adapter *adapter = (_adapter *)file->private_data;
+	unsigned long flags;
+	char line[128];
+	u8 tail;
+	size_t len;
+	int ret;
+
+	if (!adapter || !buffer)
+		return -EFAULT;
+
+	if (*ppos != 0)
+		return 0;
+
+	while (1) {
+		spin_lock_irqsave(&adapter->rate_ctl_event_lock, flags);
+		if (adapter->rate_ctl_event_q_head != adapter->rate_ctl_event_q_tail) {
+			tail = adapter->rate_ctl_event_q_tail;
+			adapter->rate_ctl_event_q_tail = (tail + 1) % ARRAY_SIZE(adapter->rate_ctl_event_q);
+			_rtw_memcpy(line, adapter->rate_ctl_event_q[tail], sizeof(line));
+			spin_unlock_irqrestore(&adapter->rate_ctl_event_lock, flags);
+			break;
+		}
+		spin_unlock_irqrestore(&adapter->rate_ctl_event_lock, flags);
+
+		if (file->f_flags & O_NONBLOCK)
+			return -EAGAIN;
+		ret = wait_event_interruptible(adapter->rate_ctl_event_wq,
+			adapter->rate_ctl_event_q_head != adapter->rate_ctl_event_q_tail);
+		if (ret)
+			return ret;
+	}
+
+	line[sizeof(line) - 1] = '\0';
+	len = strnlen(line, sizeof(line));
+	if (len < sizeof(line) - 1 && (len == 0 || line[len - 1] != '\n'))
+		line[len++] = '\n';
+	return simple_read_from_buffer(buffer, count, ppos, line, len);
+}
+
+static __poll_t rtw_rate_ctl_event_poll(struct file *file, poll_table *wait)
+{
+	_adapter *adapter = (_adapter *)file->private_data;
+	__poll_t mask = 0;
+
+	if (!adapter)
+		return POLLERR;
+
+	poll_wait(file, &adapter->rate_ctl_event_wq, wait);
+	if (adapter->rate_ctl_event_q_head != adapter->rate_ctl_event_q_tail)
+		mask |= POLLIN | POLLRDNORM;
+
+	return mask;
+}
+
+static ssize_t rtw_rate_ctl_event_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
+{
+	_adapter *adapter = (_adapter *)file->private_data;
+
+	if (!adapter)
+		return -EFAULT;
+
+	return proc_set_rate_ctl_event(file, buffer, count, ppos, adapter->pnetdev);
+}
+
+static const struct rtw_proc_ops rtw_rate_ctl_event_fops = {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+	.proc_open = rtw_rate_ctl_event_open,
+	.proc_read = rtw_rate_ctl_event_read,
+	.proc_poll = rtw_rate_ctl_event_poll,
+	.proc_write = rtw_rate_ctl_event_write,
+	.proc_lseek = default_llseek,
+#else
+	.owner = THIS_MODULE,
+	.open = rtw_rate_ctl_event_open,
+	.read = rtw_rate_ctl_event_read,
+	.poll = rtw_rate_ctl_event_poll,
+	.write = rtw_rate_ctl_event_write,
+	.llseek = default_llseek,
+#endif
+};
+
 int proc_get_odm_adaptivity(struct seq_file *m, void *v)
 {
 	struct net_device *dev = m->private;
@@ -7338,6 +7431,12 @@ struct proc_dir_entry *rtw_adapter_proc_init(struct net_device *dev)
 		}
 	}
 
+	entry = rtw_proc_create_entry("rate_ctl_event", dir_dev, &rtw_rate_ctl_event_fops, dev);
+	if (!entry) {
+		rtw_warn_on(1);
+		goto exit;
+	}
+
 	rtw_odm_proc_init(dev);
 
 #ifdef CONFIG_MCC_MODE
@@ -7364,6 +7463,7 @@ void rtw_adapter_proc_deinit(struct net_device *dev)
 
 	for (i = 0; i < adapter_proc_hdls_num; i++)
 		remove_proc_entry(adapter_proc_hdls[i].name, dir_dev);
+	remove_proc_entry("rate_ctl_event", dir_dev);
 
 	rtw_odm_proc_deinit(adapter);
 
