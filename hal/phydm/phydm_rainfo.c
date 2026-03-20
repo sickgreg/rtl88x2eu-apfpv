@@ -60,16 +60,12 @@ static const char *phydm_ra_report_reason_str(u8 fw_reason, u8 retry_ratio)
 
 static void phydm_notify_rate_ctl_event(void *dm_void, struct cmn_sta_info *sta,
 					u8 from_rate, u8 to_rate,
+					u8 from_bw, u8 to_bw,
 					u8 fw_reason, u8 retry_ratio)
 {
 #if (DM_ODM_SUPPORT_TYPE & ODM_CE)
 	struct dm_struct *dm = (struct dm_struct *)dm_void;
 	PADAPTER adapter;
-	u8 from_rate_idx;
-	u8 to_rate_idx;
-	u8 from_order;
-	u8 to_order;
-	const char *event;
 
 	if (!dm || !sta || !dm->adapter)
 		return;
@@ -80,35 +76,20 @@ static void phydm_notify_rate_ctl_event(void *dm_void, struct cmn_sta_info *sta,
 	    && !MLME_IS_MESH(adapter))
 		return;
 
-	if (adapter->fix_rate != 0xFF)
+	if (adapter->fix_rate != 0xFF && !adapter->rate_ctl_pending_drop)
 		return;
 
-	from_rate_idx = from_rate & 0x7f;
-	to_rate_idx = to_rate & 0x7f;
-
-	/* Ignore SGI-only flips and the first uninitialized report. */
-	if (from_rate_idx == to_rate_idx || from_rate == 0)
-		return;
-
-	from_order = phydm_rate_order_compute(dm, from_rate_idx);
-	to_order = phydm_rate_order_compute(dm, to_rate_idx);
-
-	if (to_order < from_order)
-		event = "RATE_DROP";
-	else if (to_order > from_order)
-		event = "RATE_RISE";
-	else
-		event = (to_rate_idx < from_rate_idx) ? "RATE_DROP" : "RATE_RISE";
-
-	rtw_rate_ctl_event_notify_with_rssi(adapter, from_rate, to_rate,
-					    sta->rssi_stat.rssi, event,
-					    phydm_ra_report_reason_str(fw_reason,
-								 retry_ratio));
+	rtw_rate_ctl_handle_ra_report(adapter, sta, from_rate, to_rate,
+				      from_bw, to_bw, sta->rssi_stat.rssi,
+				      phydm_ra_report_reason_str(fw_reason,
+							 retry_ratio));
 #else
 	(void)dm_void;
 	(void)sta;
 	(void)from_rate;
 	(void)to_rate;
+	(void)from_bw;
+	(void)to_bw;
 	(void)fw_reason;
 	(void)retry_ratio;
 #endif
@@ -647,9 +628,10 @@ void phydm_c2h_ra_report_handler(void *dm_void, u8 *cmd_buf, u8 cmd_len)
 #endif
 	if (is_sta_active(sta)) {
 		u8 prev_rate = sta->ra_info.curr_tx_rate;
+		u8 prev_bw = sta->ra_info.curr_tx_bw;
 
-		phydm_notify_rate_ctl_event(dm, sta, prev_rate, rate, cmd_buf[3],
-					    ra_ratio);
+		phydm_notify_rate_ctl_event(dm, sta, prev_rate, rate, prev_bw,
+					    curr_bw, cmd_buf[3], ra_ratio);
 		sta->ra_info.curr_tx_rate = rate;
 		sta->ra_info.curr_tx_bw = (enum channel_width)curr_bw;
 		sta->ra_info.curr_retry_ratio = ra_ratio;

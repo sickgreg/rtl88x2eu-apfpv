@@ -6959,6 +6959,25 @@ static int proc_get_rate_ctl_watchdog_dbg(struct seq_file *m, void *v)
 		      adapter->rate_ctl_watchdog_last_to_rate);
 	RTW_PRINT_SEL(m, "last_to_bw=%u\n",
 		      adapter->rate_ctl_watchdog_last_to_bw);
+	RTW_PRINT_SEL(m, "pending_drop=%u\n",
+		      adapter->rate_ctl_pending_drop);
+	RTW_PRINT_SEL(m, "pending_macid=%u\n",
+		      adapter->rate_ctl_pending_macid);
+	RTW_PRINT_SEL(m, "pending_from_rate=0x%02x\n",
+		      adapter->rate_ctl_pending_from_rate);
+	RTW_PRINT_SEL(m, "pending_to_rate=0x%02x\n",
+		      adapter->rate_ctl_pending_to_rate);
+	RTW_PRINT_SEL(m, "pending_from_bw=%u\n",
+		      adapter->rate_ctl_pending_from_bw);
+	RTW_PRINT_SEL(m, "pending_to_bw=%u\n",
+		      adapter->rate_ctl_pending_to_bw);
+	RTW_PRINT_SEL(m, "pending_rssi=%d\n",
+		      adapter->rate_ctl_pending_rssi);
+	RTW_PRINT_SEL(m, "pending_delay_ms=%u\n",
+		      adapter->rate_ctl_pending_delay_ms);
+	RTW_PRINT_SEL(m, "pending_ms_left=%d\n",
+		      adapter->rate_ctl_pending_drop ?
+		      rtw_get_remaining_time_ms(adapter->rate_ctl_pending_drop_expire) : 0);
 
 	return 0;
 }

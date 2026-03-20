@@ -2002,6 +2002,15 @@ struct _ADAPTER {
 	u8 data_fb; /* data rate fallback, valid only when fix_rate is not 0xff */
 	u64 rate_ctl_event_seq;
 	char rate_ctl_event[128];
+	u8 rate_ctl_pending_drop;
+	u8 rate_ctl_pending_macid;
+	u8 rate_ctl_pending_from_rate;
+	u8 rate_ctl_pending_to_rate;
+	u8 rate_ctl_pending_from_bw;
+	u8 rate_ctl_pending_to_bw;
+	s8 rate_ctl_pending_rssi;
+	u16 rate_ctl_pending_delay_ms;
+	systime rate_ctl_pending_drop_expire;
 	u64 rate_ctl_watchdog_runs;
 	u64 rate_ctl_watchdog_sta_seen;
 	u64 rate_ctl_watchdog_rate_changes;
