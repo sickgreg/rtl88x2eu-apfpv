@@ -1217,7 +1217,8 @@ void update_sta_info_apmode(_adapter *padapter, struct sta_info *psta)
 #ifdef CONFIG_80211AC_VHT
 	update_sta_vht_info_apmode(padapter, psta);
 #endif
-	psta->cmn.ra_info.is_support_sgi = query_ra_short_GI(psta, rtw_get_tx_bw_mode(padapter, psta));
+	psta->cmn.ra_info.is_support_sgi_cap = query_ra_short_GI(psta, rtw_get_tx_bw_mode(padapter, psta));
+	psta->cmn.ra_info.is_support_sgi = psta->cmn.ra_info.is_support_sgi_cap;
 	update_ldpc_stbc_cap(psta);
 
 	/* todo: init other variables */

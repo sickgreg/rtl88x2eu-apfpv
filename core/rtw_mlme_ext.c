@@ -11587,7 +11587,8 @@ void update_sta_info(_adapter *padapter, struct sta_info *psta)
 		#endif /*CONFIG_BEAMFORMING*/
 	}
 #endif /* CONFIG_80211AC_VHT */
-	psta->cmn.ra_info.is_support_sgi = query_ra_short_GI(psta, rtw_get_tx_bw_mode(padapter, psta));
+	psta->cmn.ra_info.is_support_sgi_cap = query_ra_short_GI(psta, rtw_get_tx_bw_mode(padapter, psta));
+	psta->cmn.ra_info.is_support_sgi = psta->cmn.ra_info.is_support_sgi_cap;
 	update_ldpc_stbc_cap(psta);
 
 	_enter_critical_bh(&psta->lock, &irqL);

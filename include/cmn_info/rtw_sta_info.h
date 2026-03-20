@@ -183,6 +183,7 @@ struct ra_sta_info {
 	u8	rate_id;			/*[PHYDM] ratr_idx*/
 	u8	rssi_level;			/*[PHYDM]*/
 	u8	is_first_connect:1;		/*[PHYDM] CE: ra_rpt_linked, AP: H2C_rssi_rpt*/
+	u8	is_support_sgi_cap:1;		/*[driver] negotiated capability*/
 	u8	is_support_sgi:1;		/*[driver]*/
 	u8	is_vht_enable:2;		/*[driver]*/
 	u8	disable_ra:1;			/*[driver]*/

@@ -162,18 +162,75 @@ echo test > /proc/net/rtl88x2eu/wlan0/rate_ctl_event
 `br_setter.c` consumes the payload above and, by default, adjusts only the encoder bitrate.
 That keeps automatic rate control in the driver, which is the normal intended path.
 
-It performs the encoder update via built-in HTTP (`GET /api/v1/set?video0.bitrate=<bps>`) and uses a conservative default of `55%` of estimated PHY rate.
+It performs the encoder update via built-in HTTP (`GET /api/v1/set?video0.bitrate=<kbps>`) and uses a conservative default of `20%` of estimated PHY rate.
 The `rate_ctl_event` proc endpoint supports queue + wakeup semantics for userspace (`poll()` wakes when a new event is queued).
 `br_setter.c` ignores `RATE_INIT` and `USER_EVENT` so they do not trigger bitrate changes.
+
+Runtime behavior notes:
+- upward bitrate changes are held for `1s`
+- small downward changes are held for `300ms`
+- width changes are refreshed while running (no restart required)
+- bitrate caps are width-based:
+  - `20 MHz` -> `25000 kbps`
+  - `40 MHz` -> `50000 kbps`
+  - `80 MHz` -> `80000 kbps`
 
 If you still want the old coordinated behavior for bench testing, start it with:
 ```
 ./br_setter --sync-driver-rate
 ```
 
+To override the default encoder utilization target:
+```
+./br_setter --utilization 39
+```
+
 In that compatibility mode:
 - on rate drop: set encoder bitrate first, wait 50ms, then set driver rate
 - on rate rise: set driver rate first, then set encoder bitrate
+
+### FPV robust RA profile
+This branch also exposes a runtime-switchable AP-side RA profile intended for FPV links that value robustness over absolute peak throughput.
+
+Proc node:
+```
+/proc/net/rtl88x2eu/<wlan>/fpv_ra
+```
+
+Read current settings:
+```
+cat /proc/net/rtl88x2eu/wlan0/fpv_ra
+```
+
+Enable the default robust profile:
+```
+echo 1 > /proc/net/rtl88x2eu/wlan0/fpv_ra
+```
+
+Disable it:
+```
+echo 0 > /proc/net/rtl88x2eu/wlan0/fpv_ra
+```
+
+Set all parameters explicitly:
+```
+echo "1 50 58 48" > /proc/net/rtl88x2eu/wlan0/fpv_ra
+```
+
+Format:
+```
+<enable> <one_ss_rssi_th> <sgi_rssi_th> <ldpc_thres>
+```
+
+Current profile behavior:
+- uses more conservative RSSI floors for RA mask transitions
+- starts association at a lower initial RA level
+- biases toward `1SS` below the configured threshold
+- gates `SGI` until RSSI is comfortably strong
+- keeps `LDPC` enabled longer
+- prunes fragile top-end `VHT MCS8/9` rates in FPV mode
+
+The intent is to keep the link in a more robust operating region and avoid chasing peak rate too aggressively.
 
 ##### Is it worth it?
 Usually **yes** for FPV links that change quickly (flying behind trees/buildings), because it reduces the time mismatch between link capacity and encoder bitrate.
