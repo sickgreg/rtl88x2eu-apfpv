@@ -29,6 +29,69 @@
 #include "mp_precomp.h"
 #include "phydm_precomp.h"
 
+#define FPV_RA_FLOOR_UP_GAP 5
+#define FPV_RA_ASSOC_LV1_RSSI 55
+#define FPV_RA_ASSOC_LV2_RSSI 35
+#define FPV_RA_1SS_RSSI_TH 50
+#define FPV_RA_SGI_RSSI_TH 58
+#define FPV_RA_LDPC_THRES 48
+
+static const u8 fpv_rssi_lv_table[RA_FLOOR_TABLE_SIZE] = {28, 42, 48, 54, 60, 66, 100};
+
+static u8 phydm_fpv_effective_tx_stream_num(struct dm_struct *dm,
+					    struct cmn_sta_info *sta,
+					    u8 tx_stream_num, u8 rssi)
+{
+	struct ra_table *ra_t = &dm->dm_ra_table;
+
+	if (!ra_t->fpv_ra_en)
+		return tx_stream_num;
+
+	if (tx_stream_num > 1 && rssi < ra_t->fpv_1ss_rssi_th)
+		return 1;
+
+	return tx_stream_num;
+}
+
+static u8 phydm_fpv_sgi_enabled(struct dm_struct *dm, struct ra_sta_info *ra,
+				u8 rssi)
+{
+	struct ra_table *ra_t = &dm->dm_ra_table;
+
+	if (!ra->is_support_sgi_cap)
+		return 0;
+
+	if (!ra_t->fpv_ra_en)
+		return 1;
+
+	return (rssi >= ra_t->fpv_sgi_rssi_th) ? 1 : 0;
+}
+
+static void phydm_fpv_prune_ramask(struct dm_struct *dm,
+				   struct cmn_sta_info *sta,
+				   u8 tx_stream_num, u64 *ra_mask_bitmap)
+{
+	u64 keep_mask;
+
+	if (!dm || !sta || !ra_mask_bitmap)
+		return;
+
+	if (!dm->dm_ra_table.fpv_ra_en)
+		return;
+
+	*ra_mask_bitmap &= ~((1ULL << (ODM_RATEVHTSS1MCS0 + 8))
+			  | (1ULL << (ODM_RATEVHTSS1MCS0 + 9))
+			  | (1ULL << (ODM_RATEVHTSS2MCS0 + 8))
+			  | (1ULL << (ODM_RATEVHTSS2MCS0 + 9)));
+
+	if (tx_stream_num > 1)
+		return;
+
+	keep_mask = phydm_gen_bitmask(ODM_RATEMCS8);
+	keep_mask |= phydm_gen_bitmask(8) << ODM_RATEVHTSS1MCS0;
+	*ra_mask_bitmap &= keep_mask;
+}
+
 static const char *phydm_ra_report_reason_str(u8 fw_reason, u8 retry_ratio)
 {
 	switch (fw_reason) {
@@ -1037,6 +1100,7 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 	u8 rssi_lv = 0;
 	u64 ra_mask_bitmap = 0;
 	u64 ra_mask_before_rssi_lv = 0;
+	u8 rssi = 0;
 
 	if (is_sta_active(sta)) {
 		ra = &sta->ra_info;
@@ -1045,6 +1109,7 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 		tx_stream_num = phydm_get_tx_stream_num(dm, sta->mimo_type);
 		rssi_lv = ra->rssi_level;
 		ra_mask_bitmap = ra->ramask;
+		rssi = (u8)sta->rssi_stat.rssi;
 	} else {
 		PHYDM_DBG(dm, DBG_RA, "[Warning] %s invalid STA\n", __func__);
 		return 0;
@@ -1058,6 +1123,9 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 
 	if (sta->sm_ps == SM_PS_STATIC) /*@mimo_ps_enable*/
 		tx_stream_num = 1;
+
+	tx_stream_num = phydm_fpv_effective_tx_stream_num(dm, sta, tx_stream_num,
+							   rssi);
 
 	/*@[Modify RA Mask by Wireless Mode]*/
 
@@ -1193,6 +1261,8 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 			 "Empty ramask! Bypass a/b/g ramask_by_rssi\n");
 	}
 
+	phydm_fpv_prune_ramask(dm, sta, tx_stream_num, &ra_mask_bitmap);
+
 	PHYDM_DBG(dm, DBG_RA, "Mod by RSSI=0x%llx\n", ra_mask_bitmap);
 
 	return ra_mask_bitmap;
@@ -1252,6 +1322,9 @@ u8 phydm_get_rate_id(void *dm_void, u8 sta_idx)
 		bw = ra->ra_bw_mode;
 		wrls_mode = sta->support_wireless_set;
 		tx_stream_num = phydm_get_tx_stream_num(dm, sta->mimo_type);
+		tx_stream_num = phydm_fpv_effective_tx_stream_num(dm, sta,
+								   tx_stream_num,
+								   (u8)sta->rssi_stat.rssi);
 
 	} else {
 		PHYDM_DBG(dm, DBG_RA, "[Warning] %s: invalid STA\n", __func__);
@@ -1504,6 +1577,19 @@ void phydm_ra_registed(void *dm_void, u8 sta_idx,
 	else
 		init_ra_lv = 0;
 
+	if (ra_t->fpv_ra_en) {
+		if (rssi_from_assoc > FPV_RA_ASSOC_LV1_RSSI)
+			init_ra_lv = 1;
+		else if (rssi_from_assoc > FPV_RA_ASSOC_LV2_RSSI)
+			init_ra_lv = 2;
+		else if (rssi_from_assoc > 1)
+			init_ra_lv = 3;
+		else
+			init_ra_lv = 0;
+	}
+
+	ra->is_support_sgi = phydm_fpv_sgi_enabled(dm, ra, rssi_from_assoc);
+
 	if (ra_t->record_ra_info)
 		ra_t->record_ra_info(dm, sta_idx, sta, ra_mask);
 
@@ -1562,6 +1648,9 @@ void phydm_ra_mask_watchdog(void *dm_void)
 	u64 ra_mask;
 	u8 rssi_lv_new;
 	u8 rssi = 0;
+	u8 ldpc_thres;
+	u8 sgi_en;
+	boolean sgi_changed;
 
 	if (!(dm->support_ability & ODM_BB_RA_MASK))
 		return;
@@ -1593,6 +1682,11 @@ void phydm_ra_mask_watchdog(void *dm_void)
 			  sta->mac_id);
 
 		rssi = (u8)(sta->rssi_stat.rssi);
+		ldpc_thres = ra_t->fpv_ra_en ? ra_t->fpv_ldpc_thres : ra_t->ldpc_thres;
+		sgi_en = phydm_fpv_sgi_enabled(dm, ra, rssi);
+		sgi_changed = (ra->is_support_sgi != sgi_en);
+		if (sgi_changed)
+			ra->is_support_sgi = sgi_en;
 
 		/*@to be modified*/
 		#if ((RTL8812A_SUPPORT == 1) || (RTL8821A_SUPPORT == 1))
@@ -1600,7 +1694,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 			(dm->support_ic_type == ODM_RTL8821 &&
 			 dm->cut_version == ODM_CUT_A)
 			) {
-			if (rssi < ra_t->ldpc_thres) {
+			if (rssi < ldpc_thres) {
 				/*@LDPC TX enable*/
 				#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
 				set_ra_ldpc_8812(sta, true);
@@ -1612,7 +1706,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 				PHYDM_DBG(dm, DBG_RA_MASK,
 					  "RSSI=%d, ldpc_en =TRUE\n", rssi);
 
-			} else if (rssi > (ra_t->ldpc_thres + 3)) {
+			} else if (rssi > (ldpc_thres + 3)) {
 				/*@LDPC TX disable*/
 				#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
 				set_ra_ldpc_8812(sta, false);
@@ -1629,7 +1723,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 		rssi_lv_new = phydm_rssi_lv_dec(dm, (u32)rssi, ra->rssi_level);
 
-		if (ra->rssi_level != rssi_lv_new ||
+		if (ra->rssi_level != rssi_lv_new || sgi_changed ||
 		    (force_ra_mask_en && dm->number_linked_client < 10)) {
 			PHYDM_DBG(dm, DBG_RA_MASK, "RSSI LV:((%d))->((%d))\n",
 				  ra->rssi_level, rssi_lv_new);
@@ -1811,6 +1905,13 @@ u8 phydm_rssi_lv_dec(void *dm_void, u32 rssi, u8 ratr_state)
 	u8 rssi_lv_t[RA_FLOOR_TABLE_SIZE] = {20, 34, 38, 42, 46, 50, 100};
 	u8 new_rssi_lv = 0;
 	u8 i;
+	u8 up_gap = RA_FLOOR_UP_GAP;
+
+	if (dm->dm_ra_table.fpv_ra_en) {
+		for (i = 0; i < RA_FLOOR_TABLE_SIZE; i++)
+			rssi_lv_t[i] = fpv_rssi_lv_table[i];
+		up_gap = FPV_RA_FLOOR_UP_GAP;
+	}
 
 	PHYDM_DBG(dm, DBG_RA_MASK,
 		  "curr RA level=(%d), Table_ori=[%d, %d, %d, %d, %d, %d]\n",
@@ -1819,7 +1920,7 @@ u8 phydm_rssi_lv_dec(void *dm_void, u32 rssi, u8 ratr_state)
 
 	for (i = 0; i < RA_FLOOR_TABLE_SIZE; i++) {
 		if (i >= (ratr_state))
-			rssi_lv_t[i] += RA_FLOOR_UP_GAP;
+			rssi_lv_t[i] += up_gap;
 	}
 
 	PHYDM_DBG(dm, DBG_RA_MASK,
@@ -2158,6 +2259,10 @@ void phydm_ra_info_init(void *dm_void)
 	ra_tab->dynamic_rrsr_en = false;
 	ra_tab->ra_trigger_mode = 1; // default TBTT RA
 	ra_tab->ra_tx_cls_th = 255;
+	ra_tab->fpv_ra_en = 0;
+	ra_tab->fpv_1ss_rssi_th = FPV_RA_1SS_RSSI_TH;
+	ra_tab->fpv_sgi_rssi_th = FPV_RA_SGI_RSSI_TH;
+	ra_tab->fpv_ldpc_thres = FPV_RA_LDPC_THRES;
 #if (RTL8822B_SUPPORT == 1)
 	if (dm->support_ic_type == ODM_RTL8822B) {
 		u32 ret_value;

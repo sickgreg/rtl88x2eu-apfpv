@@ -212,6 +212,10 @@ struct ra_table {
 	u8	retrylimit_high;
 #endif
 	u8	ldpc_thres; /* @if RSSI > ldpc_th => switch from LPDC to BCC */
+	u8	fpv_ra_en;
+	u8	fpv_1ss_rssi_th;
+	u8	fpv_sgi_rssi_th;
+	u8	fpv_ldpc_thres;
 	void (*record_ra_info)(void *dm_void, u8 macid,
 			       struct cmn_sta_info *sta, u64 ra_mask);
 	u8	ra_mask_rpt_stamp;

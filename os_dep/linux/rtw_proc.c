@@ -107,6 +107,8 @@ static int proc_get_dummy(struct seq_file *m, void *v)
 }
 
 static int proc_get_rate_ctl_watchdog_dbg(struct seq_file *m, void *v);
+static int proc_get_fpv_ra(struct seq_file *m, void *v);
+static ssize_t proc_set_fpv_ra(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data);
 
 static int proc_get_drv_version(struct seq_file *m, void *v)
 {
@@ -6354,6 +6356,7 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("rate_ctl", proc_get_rate_ctl, proc_set_rate_ctl),
 	RTW_PROC_HDL_SSEQ("rate_ctl_event_last", proc_get_rate_ctl_event, NULL),
 	RTW_PROC_HDL_SSEQ("rate_ctl_watchdog_dbg", proc_get_rate_ctl_watchdog_dbg, NULL),
+	RTW_PROC_HDL_SSEQ("fpv_ra", proc_get_fpv_ra, proc_set_fpv_ra),
 	RTW_PROC_HDL_SSEQ("bw_ctl", proc_get_bw_ctl, proc_set_bw_ctl),
 	RTW_PROC_HDL_SSEQ("tx_ok_cnt", proc_get_tx_ok_cnt, NULL),
 	RTW_PROC_HDL_SSEQ("tx_fail_cnt", proc_get_tx_fail_cnt, NULL),
@@ -6980,6 +6983,78 @@ static int proc_get_rate_ctl_watchdog_dbg(struct seq_file *m, void *v)
 		      rtw_get_remaining_time_ms(adapter->rate_ctl_pending_drop_expire) : 0);
 
 	return 0;
+}
+
+static int proc_get_fpv_ra(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dm_struct *dm = adapter_to_phydm(adapter);
+	struct ra_table *ra_t;
+
+	if (!adapter || !dm)
+		return -EFAULT;
+
+	ra_t = &dm->dm_ra_table;
+	RTW_PRINT_SEL(m, "enabled=%u\n", ra_t->fpv_ra_en);
+	RTW_PRINT_SEL(m, "one_ss_rssi_th=%u\n", ra_t->fpv_1ss_rssi_th);
+	RTW_PRINT_SEL(m, "sgi_rssi_th=%u\n", ra_t->fpv_sgi_rssi_th);
+	RTW_PRINT_SEL(m, "ldpc_thres=%u\n", ra_t->fpv_ldpc_thres);
+	RTW_PRINT_SEL(m, "notes=robust_ra profile: conservative RSSI floors, 1SS bias, SGI gating, VHT MCS8/9 pruned\n");
+
+	return 0;
+}
+
+static ssize_t proc_set_fpv_ra(struct file *file, const char __user *buffer,
+			       size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dm_struct *dm = adapter_to_phydm(adapter);
+	struct ra_table *ra_t;
+	char tmp[64];
+	u32 en;
+	u32 one_ss_rssi_th = 0;
+	u32 sgi_rssi_th = 0;
+	u32 ldpc_thres = 0;
+
+	if (!adapter || !dm)
+		return -EFAULT;
+
+	if (count < 1)
+		return -EFAULT;
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	ra_t = &dm->dm_ra_table;
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%u %u %u %u", &en, &one_ss_rssi_th,
+				 &sgi_rssi_th, &ldpc_thres);
+
+		if (num < 1)
+			return count;
+		if (en > 1)
+			return -EFAULT;
+
+		ra_t->fpv_ra_en = (u8)en;
+		if (num >= 2 && one_ss_rssi_th <= 100)
+			ra_t->fpv_1ss_rssi_th = (u8)one_ss_rssi_th;
+		if (num >= 3 && sgi_rssi_th <= 100)
+			ra_t->fpv_sgi_rssi_th = (u8)sgi_rssi_th;
+		if (num >= 4 && ldpc_thres <= 100)
+			ra_t->fpv_ldpc_thres = (u8)ldpc_thres;
+
+		ra_t->up_ramask_cnt = FORCED_UPDATE_RAMASK_PERIOD - 1;
+		RTW_INFO("fpv_ra=%u one_ss_rssi_th=%u sgi_rssi_th=%u ldpc_thres=%u\n",
+			 ra_t->fpv_ra_en, ra_t->fpv_1ss_rssi_th,
+			 ra_t->fpv_sgi_rssi_th, ra_t->fpv_ldpc_thres);
+	}
+
+	return count;
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0))
