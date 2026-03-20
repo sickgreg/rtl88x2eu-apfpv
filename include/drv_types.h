@@ -2002,6 +2002,18 @@ struct _ADAPTER {
 	u8 data_fb; /* data rate fallback, valid only when fix_rate is not 0xff */
 	u64 rate_ctl_event_seq;
 	char rate_ctl_event[128];
+	u64 rate_ctl_watchdog_runs;
+	u64 rate_ctl_watchdog_sta_seen;
+	u64 rate_ctl_watchdog_rate_changes;
+	u8 rate_ctl_watchdog_last_ap;
+	u8 rate_ctl_watchdog_last_mesh;
+	u8 rate_ctl_watchdog_last_asoc;
+	u8 rate_ctl_watchdog_last_fix_rate;
+	u8 rate_ctl_watchdog_last_asoc_sta_count;
+	u8 rate_ctl_watchdog_last_from_rate;
+	u8 rate_ctl_watchdog_last_from_bw;
+	u8 rate_ctl_watchdog_last_to_rate;
+	u8 rate_ctl_watchdog_last_to_bw;
 	u8 power_offset;
 	u8 driver_tx_bw_mode;
 	u8 rsvd_page_offset;

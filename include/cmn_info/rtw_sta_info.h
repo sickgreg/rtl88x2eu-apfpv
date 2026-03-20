@@ -193,6 +193,8 @@ struct ra_sta_info {
 	enum channel_width	ra_bw_mode;	/*[Driver] max bandwidth, for RA only*/
 	enum channel_width	curr_tx_bw;	/*[PHYDM] FW->Driver*/
 	u8	curr_retry_ratio;		/*[PHYDM] FW->Driver*/
+	u8	last_event_tx_rate;		/*[Driver] watchdog event state*/
+	u8	last_event_tx_bw;		/*[Driver] watchdog event state*/
 	u64	ramask;
 };
 

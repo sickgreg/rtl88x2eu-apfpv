@@ -2897,7 +2897,10 @@ int proc_get_rate_ctl(struct seq_file *m, void *v)
 	return 0;
 }
 
-static void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rate, const char *event, const char *reason)
+void rtw_rate_ctl_event_notify_with_rssi(_adapter *adapter, u8 from_rate,
+					 u8 to_rate, s8 rssi,
+					 const char *event,
+					 const char *reason)
 {
 	unsigned long flags;
 	u8 head, next;
@@ -2914,7 +2917,7 @@ static void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rat
 		    ADPT_ARG(adapter),
 		    from_rate,
 		    to_rate,
-		    0,
+		    rssi,
 		    reason ? reason : "USER_SET");
 
 	spin_lock_irqsave(&adapter->rate_ctl_event_lock, flags);
@@ -2926,6 +2929,13 @@ static void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rat
 	adapter->rate_ctl_event_q_head = next;
 	spin_unlock_irqrestore(&adapter->rate_ctl_event_lock, flags);
 	wake_up_interruptible(&adapter->rate_ctl_event_wq);
+}
+
+void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rate,
+			       const char *event, const char *reason)
+{
+	rtw_rate_ctl_event_notify_with_rssi(adapter, from_rate, to_rate, 0,
+					    event, reason);
 }
 
 int proc_get_rate_ctl_event(struct seq_file *m, void *v)
@@ -2956,6 +2966,102 @@ ssize_t proc_set_rate_ctl_event(struct file *file, const char __user *buffer, si
 	}
 
 	return count;
+}
+
+void rtw_rate_ctl_watchdog(_adapter *adapter)
+{
+	struct sta_priv *pstapriv = &adapter->stapriv;
+	_irqL irqL;
+	_list *phead, *plist;
+	struct sta_info *psta;
+
+	if (!adapter)
+		return;
+
+	adapter->rate_ctl_watchdog_runs++;
+	adapter->rate_ctl_watchdog_last_ap = MLME_IS_AP(adapter);
+	adapter->rate_ctl_watchdog_last_mesh = MLME_IS_MESH(adapter);
+	adapter->rate_ctl_watchdog_last_asoc = MLME_IS_ASOC(adapter);
+	adapter->rate_ctl_watchdog_last_fix_rate = adapter->fix_rate;
+	adapter->rate_ctl_watchdog_last_asoc_sta_count = adapter->stapriv.asoc_sta_count;
+
+	if (!MLME_IS_AP(adapter) && !MLME_IS_MESH(adapter))
+		return;
+
+	if (adapter->fix_rate != 0xFF)
+		return;
+
+	_enter_critical_bh(&pstapriv->asoc_list_lock, &irqL);
+	phead = &pstapriv->asoc_list;
+	plist = get_next(phead);
+	while ((rtw_end_of_queue_search(phead, plist)) == _FALSE) {
+		struct ra_sta_info *ra;
+		u8 from_rate;
+		u8 to_rate;
+		u8 from_bw;
+		u8 to_bw;
+		u32 from_bitrate;
+		u32 to_bitrate;
+		const char *event;
+		s8 rssi;
+
+		psta = LIST_CONTAINOR(plist, struct sta_info, asoc_list);
+		plist = get_next(plist);
+
+		if (!(psta->state & WIFI_ASOC_STATE))
+			continue;
+		if (psta->cmn.aid == 0)
+			continue;
+		if (is_broadcast_mac_addr(psta->cmn.mac_addr))
+			continue;
+		if (_rtw_memcmp(adapter_mac_addr(adapter),
+				psta->cmn.mac_addr, ETH_ALEN))
+			continue;
+
+		ra = &psta->cmn.ra_info;
+		to_rate = ra->curr_tx_rate;
+		to_bw = ra->curr_tx_bw;
+		adapter->rate_ctl_watchdog_sta_seen++;
+		adapter->rate_ctl_watchdog_last_to_rate = to_rate;
+		adapter->rate_ctl_watchdog_last_to_bw = to_bw;
+
+		if (ra->last_event_tx_rate == 0xff || ra->last_event_tx_bw == 0xff) {
+			ra->last_event_tx_rate = to_rate;
+			ra->last_event_tx_bw = to_bw;
+			continue;
+		}
+
+		from_rate = ra->last_event_tx_rate;
+		from_bw = ra->last_event_tx_bw;
+		if (from_rate == to_rate && from_bw == to_bw)
+			continue;
+		if (from_rate == 0 || to_rate == 0) {
+			ra->last_event_tx_rate = to_rate;
+			ra->last_event_tx_bw = to_bw;
+			continue;
+		}
+
+		from_bitrate = rtw_desc_rate_to_bitrate(from_bw,
+			from_rate & 0x7f, (from_rate & 0x80) >> 7);
+		to_bitrate = rtw_desc_rate_to_bitrate(to_bw,
+			to_rate & 0x7f, (to_rate & 0x80) >> 7);
+		if (to_bitrate == from_bitrate) {
+			ra->last_event_tx_rate = to_rate;
+			ra->last_event_tx_bw = to_bw;
+			continue;
+		}
+
+		event = (to_bitrate < from_bitrate) ? "RATE_DROP" : "RATE_RISE";
+		rssi = psta->cmn.rssi_stat.rssi;
+		ra->last_event_tx_rate = to_rate;
+		ra->last_event_tx_bw = to_bw;
+		adapter->rate_ctl_watchdog_rate_changes++;
+		adapter->rate_ctl_watchdog_last_from_rate = from_rate;
+		adapter->rate_ctl_watchdog_last_from_bw = from_bw;
+		rtw_rate_ctl_event_notify_with_rssi(adapter, from_rate, to_rate,
+						    rssi, event, "WDOG");
+	}
+	_exit_critical_bh(&pstapriv->asoc_list_lock, &irqL);
 }
 
 #ifdef 	CONFIG_PHDYM_FW_FIXRATE
