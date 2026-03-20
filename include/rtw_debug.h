@@ -362,6 +362,18 @@ int proc_get_tx_power_offset(struct seq_file *m, void *v);
 int proc_get_rate_ctl(struct seq_file *m, void *v);
 int proc_get_rate_ctl_event(struct seq_file *m, void *v);
 int proc_get_wifi_spec(struct seq_file *m, void *v);
+struct cmn_sta_info;
+void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rate,
+			       const char *event, const char *reason);
+void rtw_rate_ctl_event_notify_with_rssi(_adapter *adapter, u8 from_rate,
+					 u8 to_rate, s8 rssi,
+					 const char *event,
+					 const char *reason);
+void rtw_rate_ctl_handle_ra_report(_adapter *adapter, struct cmn_sta_info *sta,
+				    u8 from_rate, u8 to_rate,
+				    u8 from_bw, u8 to_bw,
+				    s8 rssi, const char *reason);
+void rtw_rate_ctl_watchdog(_adapter *adapter);
 ssize_t proc_set_rate_ctl(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data);
 ssize_t proc_set_rate_ctl_event(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data);
 int proc_get_bw_ctl(struct seq_file *m, void *v);

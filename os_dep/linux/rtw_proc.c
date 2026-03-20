@@ -106,6 +106,8 @@ static int proc_get_dummy(struct seq_file *m, void *v)
 	return 0;
 }
 
+static int proc_get_rate_ctl_watchdog_dbg(struct seq_file *m, void *v);
+
 static int proc_get_drv_version(struct seq_file *m, void *v)
 {
 	dump_drv_version(m);
@@ -6350,6 +6352,8 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("trx_info", proc_get_trx_info, proc_reset_trx_info),
 	RTW_PROC_HDL_SSEQ("tx_power_offset", proc_get_tx_power_offset, proc_set_tx_power_offset),
 	RTW_PROC_HDL_SSEQ("rate_ctl", proc_get_rate_ctl, proc_set_rate_ctl),
+	RTW_PROC_HDL_SSEQ("rate_ctl_event_last", proc_get_rate_ctl_event, NULL),
+	RTW_PROC_HDL_SSEQ("rate_ctl_watchdog_dbg", proc_get_rate_ctl_watchdog_dbg, NULL),
 	RTW_PROC_HDL_SSEQ("bw_ctl", proc_get_bw_ctl, proc_set_bw_ctl),
 	RTW_PROC_HDL_SSEQ("tx_ok_cnt", proc_get_tx_ok_cnt, NULL),
 	RTW_PROC_HDL_SSEQ("tx_fail_cnt", proc_get_tx_fail_cnt, NULL),
@@ -6929,6 +6933,56 @@ static ssize_t rtw_rate_ctl_event_read(struct file *file, char __user *buffer, s
 	return simple_read_from_buffer(buffer, count, ppos, line, len);
 }
 
+static int proc_get_rate_ctl_watchdog_dbg(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+
+	RTW_PRINT_SEL(m, "runs=%llu\n",
+		      (unsigned long long)adapter->rate_ctl_watchdog_runs);
+	RTW_PRINT_SEL(m, "sta_seen=%llu\n",
+		      (unsigned long long)adapter->rate_ctl_watchdog_sta_seen);
+	RTW_PRINT_SEL(m, "rate_changes=%llu\n",
+		      (unsigned long long)adapter->rate_ctl_watchdog_rate_changes);
+	RTW_PRINT_SEL(m, "last_ap=%u\n", adapter->rate_ctl_watchdog_last_ap);
+	RTW_PRINT_SEL(m, "last_mesh=%u\n", adapter->rate_ctl_watchdog_last_mesh);
+	RTW_PRINT_SEL(m, "last_asoc=%u\n", adapter->rate_ctl_watchdog_last_asoc);
+	RTW_PRINT_SEL(m, "last_fix_rate=0x%02x\n",
+		      adapter->rate_ctl_watchdog_last_fix_rate);
+	RTW_PRINT_SEL(m, "last_asoc_sta_count=%u\n",
+		      adapter->rate_ctl_watchdog_last_asoc_sta_count);
+	RTW_PRINT_SEL(m, "last_from_rate=0x%02x\n",
+		      adapter->rate_ctl_watchdog_last_from_rate);
+	RTW_PRINT_SEL(m, "last_from_bw=%u\n",
+		      adapter->rate_ctl_watchdog_last_from_bw);
+	RTW_PRINT_SEL(m, "last_to_rate=0x%02x\n",
+		      adapter->rate_ctl_watchdog_last_to_rate);
+	RTW_PRINT_SEL(m, "last_to_bw=%u\n",
+		      adapter->rate_ctl_watchdog_last_to_bw);
+	RTW_PRINT_SEL(m, "pending_drop=%u\n",
+		      adapter->rate_ctl_pending_drop);
+	RTW_PRINT_SEL(m, "pending_macid=%u\n",
+		      adapter->rate_ctl_pending_macid);
+	RTW_PRINT_SEL(m, "pending_from_rate=0x%02x\n",
+		      adapter->rate_ctl_pending_from_rate);
+	RTW_PRINT_SEL(m, "pending_to_rate=0x%02x\n",
+		      adapter->rate_ctl_pending_to_rate);
+	RTW_PRINT_SEL(m, "pending_from_bw=%u\n",
+		      adapter->rate_ctl_pending_from_bw);
+	RTW_PRINT_SEL(m, "pending_to_bw=%u\n",
+		      adapter->rate_ctl_pending_to_bw);
+	RTW_PRINT_SEL(m, "pending_rssi=%d\n",
+		      adapter->rate_ctl_pending_rssi);
+	RTW_PRINT_SEL(m, "pending_delay_ms=%u\n",
+		      adapter->rate_ctl_pending_delay_ms);
+	RTW_PRINT_SEL(m, "pending_ms_left=%d\n",
+		      adapter->rate_ctl_pending_drop ?
+		      rtw_get_remaining_time_ms(adapter->rate_ctl_pending_drop_expire) : 0);
+
+	return 0;
+}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0))
 static __poll_t rtw_rate_ctl_event_poll(struct file *file, poll_table *wait)
 {
 	_adapter *adapter = (_adapter *)file->private_data;
@@ -6943,6 +6997,22 @@ static __poll_t rtw_rate_ctl_event_poll(struct file *file, poll_table *wait)
 
 	return mask;
 }
+#else
+static unsigned int rtw_rate_ctl_event_poll(struct file *file, poll_table *wait)
+{
+	_adapter *adapter = (_adapter *)file->private_data;
+	unsigned int mask = 0;
+
+	if (!adapter)
+		return POLLERR;
+
+	poll_wait(file, &adapter->rate_ctl_event_wq, wait);
+	if (adapter->rate_ctl_event_q_head != adapter->rate_ctl_event_q_tail)
+		mask |= POLLIN | POLLRDNORM;
+
+	return mask;
+}
+#endif
 
 static ssize_t rtw_rate_ctl_event_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
 {

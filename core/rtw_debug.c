@@ -2897,7 +2897,10 @@ int proc_get_rate_ctl(struct seq_file *m, void *v)
 	return 0;
 }
 
-static void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rate, const char *event, const char *reason)
+void rtw_rate_ctl_event_notify_with_rssi(_adapter *adapter, u8 from_rate,
+					 u8 to_rate, s8 rssi,
+					 const char *event,
+					 const char *reason)
 {
 	unsigned long flags;
 	u8 head, next;
@@ -2914,7 +2917,7 @@ static void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rat
 		    ADPT_ARG(adapter),
 		    from_rate,
 		    to_rate,
-		    0,
+		    rssi,
 		    reason ? reason : "USER_SET");
 
 	spin_lock_irqsave(&adapter->rate_ctl_event_lock, flags);
@@ -2926,6 +2929,204 @@ static void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rat
 	adapter->rate_ctl_event_q_head = next;
 	spin_unlock_irqrestore(&adapter->rate_ctl_event_lock, flags);
 	wake_up_interruptible(&adapter->rate_ctl_event_wq);
+}
+
+void rtw_rate_ctl_event_notify(_adapter *adapter, u8 from_rate, u8 to_rate,
+			       const char *event, const char *reason)
+{
+	rtw_rate_ctl_event_notify_with_rssi(adapter, from_rate, to_rate, 0,
+					    event, reason);
+}
+
+#define RTW_RATE_CTL_PRE_DROP_DELAY_SMALL_MS 500
+#define RTW_RATE_CTL_PRE_DROP_DELAY_BIG_MS 150
+#define RTW_RATE_CTL_BIG_DROP_RATIO_PCT 85
+
+static u8 rtw_rate_ctl_valid_bw(u8 bw)
+{
+	if (bw > CHANNEL_WIDTH_80_80)
+		return CHANNEL_WIDTH_20;
+	return bw;
+}
+
+static u32 rtw_rate_ctl_bitrate_100kbps(u8 bw, u8 rate)
+{
+	return rtw_desc_rate_to_bitrate(rtw_rate_ctl_valid_bw(bw),
+		rate & 0x7f, (rate & 0x80) >> 7);
+}
+
+static u16 rtw_rate_ctl_pick_delay_ms(u32 from_bitrate, u32 to_bitrate)
+{
+	if (!from_bitrate || !to_bitrate)
+		return RTW_RATE_CTL_PRE_DROP_DELAY_SMALL_MS;
+
+	if ((to_bitrate * 100) <= (from_bitrate * RTW_RATE_CTL_BIG_DROP_RATIO_PCT))
+		return RTW_RATE_CTL_PRE_DROP_DELAY_BIG_MS;
+
+	return RTW_RATE_CTL_PRE_DROP_DELAY_SMALL_MS;
+}
+
+static void rtw_rate_ctl_pending_clear(_adapter *adapter)
+{
+	if (!adapter)
+		return;
+
+	adapter->rate_ctl_pending_drop = 0;
+	adapter->rate_ctl_pending_macid = 0xff;
+	adapter->rate_ctl_pending_from_rate = 0xff;
+	adapter->rate_ctl_pending_to_rate = 0xff;
+	adapter->rate_ctl_pending_from_bw = 0xff;
+	adapter->rate_ctl_pending_to_bw = 0xff;
+	adapter->rate_ctl_pending_rssi = 0;
+	adapter->rate_ctl_pending_delay_ms = 0;
+	adapter->rate_ctl_pending_drop_expire = 0;
+}
+
+static void rtw_rate_ctl_pending_release(_adapter *adapter)
+{
+	if (!adapter)
+		return;
+
+	adapter->fix_rate = 0xFF;
+	adapter->fix_bw = 0xFF;
+}
+
+static void rtw_rate_ctl_pending_start(_adapter *adapter, u8 macid,
+				       u8 from_rate, u8 to_rate,
+				       u8 from_bw, u8 to_bw,
+				       s8 rssi, const char *reason,
+				       u16 delay_ms)
+{
+	if (!adapter)
+		return;
+
+	adapter->rate_ctl_pending_drop = 1;
+	adapter->rate_ctl_pending_macid = macid;
+	adapter->rate_ctl_pending_from_rate = from_rate;
+	adapter->rate_ctl_pending_to_rate = to_rate;
+	adapter->rate_ctl_pending_from_bw = from_bw;
+	adapter->rate_ctl_pending_to_bw = to_bw;
+	adapter->rate_ctl_pending_rssi = rssi;
+	adapter->rate_ctl_pending_delay_ms = delay_ms;
+	adapter->rate_ctl_pending_drop_expire =
+		rtw_get_current_time() + rtw_ms_to_systime(delay_ms);
+
+	/*
+	 * Diagnostic mode: keep tracking the pending drop and emitting PRE_DROP /
+	 * DROP_* events, but do not force TX descriptors to the old rate here.
+	 * This isolates stream-impact regressions from the active fix_rate hold.
+	 */
+
+	rtw_rate_ctl_event_notify_with_rssi(adapter, from_rate, to_rate, rssi,
+					    "PRE_DROP",
+					    reason ? reason : "DEFER");
+}
+
+static void rtw_rate_ctl_pending_commit(_adapter *adapter)
+{
+	if (!adapter || !adapter->rate_ctl_pending_drop)
+		return;
+
+	rtw_rate_ctl_pending_release(adapter);
+	rtw_rate_ctl_event_notify_with_rssi(adapter,
+					    adapter->rate_ctl_pending_from_rate,
+					    adapter->rate_ctl_pending_to_rate,
+					    adapter->rate_ctl_pending_rssi,
+					    "DROP_COMMIT",
+					    "TIMEOUT");
+	rtw_rate_ctl_pending_clear(adapter);
+}
+
+static void rtw_rate_ctl_pending_cancel(_adapter *adapter, const char *reason)
+{
+	if (!adapter || !adapter->rate_ctl_pending_drop)
+		return;
+
+	rtw_rate_ctl_pending_release(adapter);
+	rtw_rate_ctl_event_notify_with_rssi(adapter,
+					    adapter->rate_ctl_pending_from_rate,
+					    adapter->rate_ctl_pending_to_rate,
+					    adapter->rate_ctl_pending_rssi,
+					    "DROP_CANCEL",
+					    reason ? reason : "RECOVERED");
+	rtw_rate_ctl_pending_clear(adapter);
+}
+
+void rtw_rate_ctl_handle_ra_report(_adapter *adapter, struct cmn_sta_info *sta,
+				   u8 from_rate, u8 to_rate,
+				   u8 from_bw, u8 to_bw,
+				   s8 rssi, const char *reason)
+{
+	u32 from_bitrate;
+	u32 to_bitrate;
+	u32 pending_from_bitrate;
+	u32 pending_to_bitrate;
+	u16 delay_ms;
+
+	if (!adapter || !sta)
+		return;
+
+	if (!MLME_IS_ASOC(adapter)
+	    && !MLME_IS_AP(adapter)
+	    && !MLME_IS_MESH(adapter))
+		return;
+
+	if (adapter->fix_rate != 0xFF && !adapter->rate_ctl_pending_drop)
+		return;
+
+	if (from_rate == 0 || from_rate == 0xff || to_rate == 0 || to_rate == 0xff)
+		return;
+
+	from_bitrate = rtw_rate_ctl_bitrate_100kbps(from_bw, from_rate);
+	to_bitrate = rtw_rate_ctl_bitrate_100kbps(to_bw, to_rate);
+	if (!from_bitrate || !to_bitrate || from_bitrate == to_bitrate)
+		return;
+
+	if (to_bitrate > from_bitrate) {
+		if (adapter->rate_ctl_pending_drop
+		    && adapter->rate_ctl_pending_macid == sta->mac_id)
+			rtw_rate_ctl_pending_cancel(adapter, reason);
+
+		rtw_rate_ctl_event_notify_with_rssi(adapter, from_rate, to_rate, rssi,
+						    "RATE_RISE",
+						    reason ? reason : "FW_RPT");
+		return;
+	}
+
+	delay_ms = rtw_rate_ctl_pick_delay_ms(from_bitrate, to_bitrate);
+
+	if (!adapter->rate_ctl_pending_drop) {
+		rtw_rate_ctl_pending_start(adapter, sta->mac_id, from_rate, to_rate,
+					   from_bw, to_bw, rssi, reason,
+					   delay_ms);
+		return;
+	}
+
+	if (adapter->rate_ctl_pending_macid != sta->mac_id)
+		return;
+
+	pending_from_bitrate = rtw_rate_ctl_bitrate_100kbps(
+		adapter->rate_ctl_pending_from_bw,
+		adapter->rate_ctl_pending_from_rate);
+	pending_to_bitrate = rtw_rate_ctl_bitrate_100kbps(
+		adapter->rate_ctl_pending_to_bw,
+		adapter->rate_ctl_pending_to_rate);
+
+	if (to_bitrate >= pending_from_bitrate) {
+		if (reason && _rtw_memcmp((void *)reason, "FW_FIX", 6))
+			return;
+		rtw_rate_ctl_pending_cancel(adapter, reason);
+		return;
+	}
+
+	if (to_bitrate >= pending_to_bitrate)
+		return;
+
+	rtw_rate_ctl_pending_start(adapter, sta->mac_id,
+				   adapter->rate_ctl_pending_from_rate,
+				   to_rate,
+				   adapter->rate_ctl_pending_from_bw,
+				   to_bw, rssi, reason, delay_ms);
 }
 
 int proc_get_rate_ctl_event(struct seq_file *m, void *v)
@@ -2956,6 +3157,113 @@ ssize_t proc_set_rate_ctl_event(struct file *file, const char __user *buffer, si
 	}
 
 	return count;
+}
+
+void rtw_rate_ctl_watchdog(_adapter *adapter)
+{
+	struct sta_priv *pstapriv = &adapter->stapriv;
+	_irqL irqL;
+	_list *phead, *plist;
+	struct sta_info *psta;
+
+	if (!adapter)
+		return;
+
+	if (adapter->rate_ctl_pending_drop
+	    && rtw_time_after(rtw_get_current_time(),
+			      adapter->rate_ctl_pending_drop_expire))
+		rtw_rate_ctl_pending_commit(adapter);
+
+	adapter->rate_ctl_watchdog_runs++;
+	adapter->rate_ctl_watchdog_last_ap = MLME_IS_AP(adapter);
+	adapter->rate_ctl_watchdog_last_mesh = MLME_IS_MESH(adapter);
+	adapter->rate_ctl_watchdog_last_asoc = MLME_IS_ASOC(adapter);
+	adapter->rate_ctl_watchdog_last_fix_rate = adapter->fix_rate;
+	adapter->rate_ctl_watchdog_last_asoc_sta_count = adapter->stapriv.asoc_sta_count;
+
+	if (!MLME_IS_AP(adapter) && !MLME_IS_MESH(adapter))
+		return;
+
+	if (adapter->fix_rate != 0xFF)
+		return;
+
+	_enter_critical_bh(&pstapriv->asoc_list_lock, &irqL);
+	phead = &pstapriv->asoc_list;
+	plist = get_next(phead);
+	while ((rtw_end_of_queue_search(phead, plist)) == _FALSE) {
+		struct ra_sta_info *ra;
+		u8 from_rate;
+		u8 to_rate;
+		u8 from_bw;
+		u8 to_bw;
+		u32 from_bitrate;
+		u32 to_bitrate;
+		const char *event;
+		s8 rssi;
+
+		psta = LIST_CONTAINOR(plist, struct sta_info, asoc_list);
+		plist = get_next(plist);
+
+		if (!(psta->state & WIFI_ASOC_STATE))
+			continue;
+		if (psta->cmn.aid == 0)
+			continue;
+		if (is_broadcast_mac_addr(psta->cmn.mac_addr))
+			continue;
+		if (_rtw_memcmp(adapter_mac_addr(adapter),
+				psta->cmn.mac_addr, ETH_ALEN))
+			continue;
+
+		ra = &psta->cmn.ra_info;
+		to_rate = ra->curr_tx_rate;
+		to_bw = ra->curr_tx_bw;
+		adapter->rate_ctl_watchdog_sta_seen++;
+		adapter->rate_ctl_watchdog_last_to_rate = to_rate;
+		adapter->rate_ctl_watchdog_last_to_bw = to_bw;
+
+		if (ra->last_event_tx_rate == 0xff || ra->last_event_tx_bw == 0xff) {
+			ra->last_event_tx_rate = to_rate;
+			ra->last_event_tx_bw = to_bw;
+			continue;
+		}
+
+		from_rate = ra->last_event_tx_rate;
+		from_bw = ra->last_event_tx_bw;
+		if (from_rate == to_rate && from_bw == to_bw)
+			continue;
+		if (from_rate == 0 || to_rate == 0) {
+			ra->last_event_tx_rate = to_rate;
+			ra->last_event_tx_bw = to_bw;
+			continue;
+		}
+
+		from_bitrate = rtw_desc_rate_to_bitrate(from_bw,
+			from_rate & 0x7f, (from_rate & 0x80) >> 7);
+		to_bitrate = rtw_desc_rate_to_bitrate(to_bw,
+			to_rate & 0x7f, (to_rate & 0x80) >> 7);
+		if (to_bitrate == from_bitrate) {
+			ra->last_event_tx_rate = to_rate;
+			ra->last_event_tx_bw = to_bw;
+			continue;
+		}
+
+		event = (to_bitrate < from_bitrate) ? "RATE_DROP" : "RATE_RISE";
+		rssi = psta->cmn.rssi_stat.rssi;
+		ra->last_event_tx_rate = to_rate;
+		ra->last_event_tx_bw = to_bw;
+		adapter->rate_ctl_watchdog_rate_changes++;
+		adapter->rate_ctl_watchdog_last_from_rate = from_rate;
+		adapter->rate_ctl_watchdog_last_from_bw = from_bw;
+
+		if (adapter->rate_ctl_pending_drop
+		    && psta->cmn.mac_id == adapter->rate_ctl_pending_macid
+		    && to_bitrate <= from_bitrate)
+			continue;
+
+		rtw_rate_ctl_event_notify_with_rssi(adapter, from_rate, to_rate,
+						    rssi, event, "WDOG");
+	}
+	_exit_critical_bh(&pstapriv->asoc_list_lock, &irqL);
 }
 
 #ifdef 	CONFIG_PHDYM_FW_FIXRATE
@@ -3037,6 +3345,9 @@ ssize_t proc_set_rate_ctl(struct file *file, const char __user *buffer, size_t c
 
 		if (num >= 1) {
 			u8 fix_rate_ori = adapter->fix_rate;
+
+			if (adapter->rate_ctl_pending_drop)
+				rtw_rate_ctl_pending_clear(adapter);
 
 			adapter->fix_rate = fix_rate;
 			if (fix_rate == 0xFF)

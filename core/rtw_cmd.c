@@ -2859,6 +2859,7 @@ void rtw_iface_dynamic_chk_wk_hdl(_adapter *padapter)
 
 	linked_status_chk(padapter, 0);
 	traffic_status_watchdog(padapter, 0);
+	rtw_rate_ctl_watchdog(padapter);
 
 	/* for debug purpose */
 	_linked_info_dump(padapter);

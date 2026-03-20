@@ -29,6 +29,72 @@
 #include "mp_precomp.h"
 #include "phydm_precomp.h"
 
+static const char *phydm_ra_report_reason_str(u8 fw_reason, u8 retry_ratio)
+{
+	switch (fw_reason) {
+	case 0xff:
+		return "FW_FIX";
+	case 1:
+		return "TRY_OK";
+	case 2:
+		return "TRY_FAIL";
+	case 3:
+		return "RATE_BACK";
+	case 4:
+		return "RSSI_START";
+	case 5:
+		return "TRY_RATE";
+	default:
+		break;
+	}
+
+	if (retry_ratio != 0xff) {
+		if (retry_ratio >= 60)
+			return "RETRY_HIGH";
+		if (retry_ratio <= 15)
+			return "RETRY_LOW";
+	}
+
+	return "FW_RPT";
+}
+
+static void phydm_notify_rate_ctl_event(void *dm_void, struct cmn_sta_info *sta,
+					u8 from_rate, u8 to_rate,
+					u8 from_bw, u8 to_bw,
+					u8 fw_reason, u8 retry_ratio)
+{
+#if (DM_ODM_SUPPORT_TYPE & ODM_CE)
+	struct dm_struct *dm = (struct dm_struct *)dm_void;
+	PADAPTER adapter;
+
+	if (!dm || !sta || !dm->adapter)
+		return;
+
+	adapter = (PADAPTER)dm->adapter;
+	if (!MLME_IS_ASOC(adapter)
+	    && !MLME_IS_AP(adapter)
+	    && !MLME_IS_MESH(adapter))
+		return;
+
+	if (adapter->fix_rate != 0xFF && !adapter->rate_ctl_pending_drop)
+		return;
+
+	rtw_rate_ctl_handle_ra_report(adapter, sta, from_rate, to_rate,
+				      from_bw, to_bw, sta->rssi_stat.rssi,
+				      phydm_ra_report_reason_str(fw_reason,
+							 retry_ratio));
+#else
+	(void)dm_void;
+	(void)sta;
+	(void)from_rate;
+	(void)to_rate;
+	(void)from_bw;
+	(void)to_bw;
+	(void)fw_reason;
+	(void)retry_ratio;
+#endif
+}
+
 boolean phydm_is_vht_rate(void *dm_void, u8 rate)
 {
 	return ((rate & 0x7f) >= ODM_RATEVHTSS1MCS0) ? true : false;
@@ -561,6 +627,11 @@ void phydm_c2h_ra_report_handler(void *dm_void, u8 *cmd_buf, u8 cmd_len)
 		return;
 #endif
 	if (is_sta_active(sta)) {
+		u8 prev_rate = sta->ra_info.curr_tx_rate;
+		u8 prev_bw = sta->ra_info.curr_tx_bw;
+
+		phydm_notify_rate_ctl_event(dm, sta, prev_rate, rate, prev_bw,
+					    curr_bw, cmd_buf[3], ra_ratio);
 		sta->ra_info.curr_tx_rate = rate;
 		sta->ra_info.curr_tx_bw = (enum channel_width)curr_bw;
 		sta->ra_info.curr_retry_ratio = ra_ratio;
@@ -1470,6 +1541,8 @@ void phydm_ra_offline(void *dm_void, u8 sta_idx)
 	odm_memory_set(dm, &ra->rate_id, 0, sizeof(struct ra_sta_info));
 	ra->disable_ra = 1;
 	ra->disable_pt = 1;
+	ra->last_event_tx_rate = 0xff;
+	ra->last_event_tx_bw = 0xff;
 
 	if (ra_t->record_ra_info)
 		ra_t->record_ra_info(dm, sta->mac_id, sta, 0);
